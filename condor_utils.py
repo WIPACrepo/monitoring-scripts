@@ -6,7 +6,7 @@ from optparse import OptionParser
 from datetime import datetime,timedelta
 import time
 import logging
-from collections import OrderedDict
+from collections import OrderedDict, Sequence
 
 import classad
 
@@ -51,6 +51,7 @@ good_keys = {
     'MATCH_EXP_JOBGLIDEIN_ResourceName':'other',
     'MachineAttrGLIDEIN_SiteResource0':'other',
     'MachineAttrGPU_NAMES0':'',
+    'PYGLIDEIN_METRIC_TIME_PER_PHOTON':-1., # need an int or float default for `filter_keys`
     'StartdPrincipal':'',
     'DAGManJobId':0.,
     'LastJobStatus':0.,
@@ -61,6 +62,8 @@ good_keys = {
     'LastRemotePool':'',
     'PRESIGNED_GET_URL':''
 }
+
+site_key = 'MATCH_EXP_JOBGLIDEIN_ResourceName'
 
 key_types = {
     'number': ['AutoClusterId','BlockReadBytes','BlockReadKbytes','BlockReads',
@@ -414,6 +417,7 @@ institutions = {
     'Clemson-Palmetto': 'OSG'
 }
 
+# pre-estimated values
 gpu_ns_photon = OrderedDict([
     ('680', 44.0),
     ('750 ti', 72.73),
@@ -436,79 +440,107 @@ gpu_ns_photon = OrderedDict([
 ])
 
 def normalize_gpu(job):
+    """
+    Will try to normalize GPUhrs found in `job` dictionary
+    w.r.t. a reference model defined below. If all methods
+    fail, no normalization is applied. Instead, the
+    unnormalized GPUhrs will be assumed to be normalized.
+    """
+    gpu_ns_per_photon_key = 'PYGLIDEIN_METRIC_TIME_PER_PHOTON'
+    gpu_ns_photon_ref = gpu_ns_photon['1080']
+    norm_key = 'gpuhrs_normalized'
+    raw_key = 'gpuhrs'
+    nonnorm_key = 'gpuhrs_nonnormalized'
+    # start off by assuming no normalization is necessary
+    job[norm_key] = job[raw_key]
+
+    def normalize_gpuhrs(job, gpu_identifier=None):
+        if job[gpu_ns_per_photon_key] > 0.:
+            # glidein reported a (sensical) value, takes preference
+            norm_factor = job[gpu_ns_per_photon_key]/gpu_ns_photon_ref
+            job[norm_key] = job[raw_key]/norm_factor
+        elif gpu_identifier is not None:
+            # value not reported, look up GPU model spec. in data base
+            # prepare for taking averages of multiple gpu types
+            if not isinstance(gpu_identifier, Sequence):
+                gpu_identifier = [gpu_identifier]
+            all_known = all(id in gpu_ns_photon for id in gpu_identifier)
+            if not all_known:
+                return
+            # weights for each model could easily be created as additional parameters
+            weight_factors = [1. for id in gpu_identifier]
+            weighted_ns_per_photon = 0.
+            for (weight, id) in zip(weight_factors, gpu_identifier):
+                weighted_ns_per_photon += weight * gpu_ns_photon[id]
+            norm_factor = weighted_ns_per_photon/(sum(weight_factors) * gpu_ns_photon_ref)
+            job[norm_key] = job[raw_key]/norm_factor
+        # otherwise, nothing to do here
+        return
+
+    if job[gpu_ns_per_photon_key] > 0.:
+        normalize_gpuhrs(job)
+        return
     if 'MachineAttrGPU_NAMES0' in job:
+        # glidein reported gpu name, try to find a match
         gpu_name = job['MachineAttrGPU_NAMES0'].split(',')[0].lower()
         for name in gpu_ns_photon:
             if name in gpu_name:
-                normalize = gpu_ns_photon[name]/gpu_ns_photon['1080']
-                job['gpuhrs_normalized'] = job['gpuhrs']/normalize
+                normalize_gpuhrs(job, gpu_identifier=name)
                 return
-    if 'MATCH_EXP_JOBGLIDEIN_ResourceName' in job:
-        site_resource = job['MATCH_EXP_JOBGLIDEIN_ResourceName'].lower()
-        if site_resource == 'crane': # Nebraska has 
-            normalize = gpu_ns_photon['k20']/gpu_ns_photon['1080']
-            job['gpuhrs_normalized'] = job['gpuhrs']/normalize
+    if site_key in job:
+        site_resource = job[site_key].lower()
+        if site_resource == 'crane': # Nebraska has k20
+            normalize_gpuhrs(job, gpu_identifier='k20')
             return
         elif 'su-its' in site_resource: # SU has 750 ti
-            normalize = gpu_ns_photon['750 ti']/gpu_ns_photon['1080']
-            job['gpuhrs_normalized'] = job['gpuhrs']/normalize
+            normalize_gpuhrs(job, gpu_identifier='750 ti')
             return
         elif site_resource == 'sdsccompinfrastructure': # likely to be 1080 ti (~95% odds)
-            normalize = gpu_ns_photon['1080 ti']/gpu_ns_photon['1080']
-            job['gpuhrs_normalized'] = job['gpuhrs']/normalize
+            normalize_gpuhrs(job, gpu_identifier='1080 ti')
             return
         elif site_resource == 'sdsc-prp': # likely to be 1080 ti (~95% odds)
-            normalize = gpu_ns_photon['1080 ti']/gpu_ns_photon['1080']
-            job['gpuhrs_normalized'] = job['gpuhrs']/normalize
+            normalize_gpuhrs(job, gpu_identifier='1080 ti')
             return
         elif site_resource == 'ucsdt2': # comet has k80 and p100
-            normalize = (gpu_ns_photon['k80']+gpu_ns_photon['p100'])/2./gpu_ns_photon['1080']
-            job['gpuhrs_normalized'] = job['gpuhrs']/normalize
+            normalize_gpuhrs(job, gpu_identifier=['k80', 'p100'])
             return
         elif 'su-og' in site_resource: # SU has 750 ti
-            normalize = gpu_ns_photon['750 ti']/gpu_ns_photon['1080']
-            job['gpuhrs_normalized'] = job['gpuhrs']/normalize
+            normalize_gpuhrs(job, gpu_identifier='750 ti')
             return
         elif 'aachen' in site_resource: # now has p100
-            normalize = gpu_ns_photon['p100']/gpu_ns_photon['1080']
-            job['gpuhrs_normalized'] = job['gpuhrs']/normalize
+            normalize_gpuhrs(job, gpu_identifier='p100')
             return
         elif 't2b_be_iihe' in site_resource: # Tesla M2075
-            normalize = gpu_ns_photon['m2075']/gpu_ns_photon['1080']
-            job['gpuhrs_normalized'] = job['gpuhrs']/normalize
+            normalize_gpuhrs(job, gpu_identifier='m2075')
             return
     if 'MachineAttrGLIDEIN_SiteResource0' in job:
         site_resource = job['MachineAttrGLIDEIN_SiteResource0'].lower()
         if site_resource == 'umd': # UMD has 1080
-            job['gpuhrs_normalized'] = job['gpuhrs']
+            normalize_gpuhrs(job, gpu_identifier='1080')
             return
-        elif site_resource == 'msu': # the older msu cluster
-            normalize = gpu_ns_photon['k40']/gpu_ns_photon['1080']
-            job['gpuhrs_normalized'] = job['gpuhrs']/normalize
+        elif site_resource == 'msu': # the older msu cluster, k40
+            normalize_gpuhrs(job, gpu_identifier='k40')
             return
     if 'LastRemoteHost' in job:
         host = job['LastRemoteHost'].lower()
         if host.endswith('.icecube.wisc.edu'):
             if 'rad' in host or ('gtx' in host and int(host.split('gtx-',1)[-1].split('.',1)[0]) < 10):
                 # this is a 1080
-                job['gpuhrs_normalized'] = job['gpuhrs']
+                normalize_gpuhrs(job, gpu_identifier='1080')
                 return
             else:
                 # this is a 980
-                normalize = gpu_ns_photon['980']/gpu_ns_photon['1080']
-                job['gpuhrs_normalized'] = job['gpuhrs']/normalize
+                normalize_gpuhrs(job, gpu_identifier='980')
                 return
         elif host.endswith('crane.hcc.unl.edu'):
-            # Nebraska has 
-            normalize = gpu_ns_photon['k20']/gpu_ns_photon['1080']
-            job['gpuhrs_normalized'] = job['gpuhrs']/normalize
+            # Nebraska has k20
+            normalize_gpuhrs(job, gpu_identifier='k20')
             return
         elif host.endswith('syr.edu'): # SU has 750 ti
-            normalize = gpu_ns_photon['750 ti']/gpu_ns_photon['1080']
-            job['gpuhrs_normalized'] = job['gpuhrs']/normalize
+            normalize_gpuhrs(job, gpu_identifier='750 ti')
             return
 
-    job['gpuhrs_nonnormalized'] = job['gpuhrs']
+    job[nonnorm_key] = job[raw_key]
 
 def get_site_from_domain(hostname):
     parts = hostname.lower().split('.')
@@ -571,12 +603,12 @@ def filter_keys(data):
             data[k] = str(data[k])
 
 def is_bad_site(data):
-    if 'MATCH_EXP_JOBGLIDEIN_ResourceName' not in data:
+    if site_key not in data:
         if 'MachineAttrGLIDEIN_SiteResource0' in data:
-            data['MATCH_EXP_JOBGLIDEIN_ResourceName'] = data['MachineAttrGLIDEIN_SiteResource0']
+            data[site_key] = data['MachineAttrGLIDEIN_SiteResource0']
         else:
             return True
-    site = data['MATCH_EXP_JOBGLIDEIN_ResourceName']
+    site = data[site_key]
     if site in ('other','osgconnect','xsede-osg','WIPAC','wipac'):
         return True
     if '.' in site:
@@ -598,11 +630,11 @@ def add_classads(data):
         if 'LastRemoteHost' in data:
             site = get_site_from_domain(data['LastRemoteHost'].split('@')[-1])
             if site:
-                data['MATCH_EXP_JOBGLIDEIN_ResourceName'] = site
+                data[site_key] = site
             elif 'StartdPrincipal' in data:
                 site = get_site_from_ip_range(data['StartdPrincipal'].split('/')[-1])
                 if site:
-                    data['MATCH_EXP_JOBGLIDEIN_ResourceName'] = site
+                    data[site_key] = site
 
     data['@timestamp'] = datetime.utcnow().isoformat()
     # add completion date
@@ -632,24 +664,24 @@ def add_classads(data):
         data['walltimehrs'] = 0.
 
     # fix Illume-MSU mixup
-    if 'MATCH_EXP_JOBGLIDEIN_ResourceName' in data and data['MATCH_EXP_JOBGLIDEIN_ResourceName'] == 'MSU' and data['date'] <= '2019-03-30' and data['date'] >= '2018-12-01':
-        data['MATCH_EXP_JOBGLIDEIN_ResourceName'] = 'Illume'
+    if site_key in data and data[site_key] == 'MSU' and data['date'] <= '2019-03-30' and data['date'] >= '2018-12-01':
+        data[site_key] = 'Illume'
 
     # add site
-    if data['MATCH_EXP_JOBGLIDEIN_ResourceName'] in site_names:
-        data['site'] = site_names[data['MATCH_EXP_JOBGLIDEIN_ResourceName']]
+    if data[site_key] in site_names:
+        data['site'] = site_names[data[site_key]]
     else:
         data['site'] = 'other'
 
     # add countries
-    if data['MATCH_EXP_JOBGLIDEIN_ResourceName'] in countries:
-        data['country'] = countries[data['MATCH_EXP_JOBGLIDEIN_ResourceName']]
+    if data[site_key] in countries:
+        data['country'] = countries[data[site_key]]
     else:
         data['country'] = 'other'
-    
+
     # add institution
-    if data['MATCH_EXP_JOBGLIDEIN_ResourceName'] in institutions:
-        data['institution'] = institutions[data['MATCH_EXP_JOBGLIDEIN_ResourceName']]
+    if data[site_key] in institutions:
+        data['institution'] = institutions[data[site_key]]
     else:
         data['institution'] = 'other'
 
