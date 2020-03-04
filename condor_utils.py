@@ -77,7 +77,7 @@ key_types = {
                'JobStatus','JobUniverse','LastJobLeaseRenewal','LastJobStatus','LastMatchTime','JobLastStartDate',
                'LastSuspensionTime','LastVacateTime','LocalSysCpu','LocalUserCpu','MachineAttrCpus0','MachineAttrSlotWeight0',
                'MaxHosts','MinHosts','NumCkpts','NumCkpts_RAW','NumJobMatches','NumJobStarts',
-               'NumRestarts','NumShadowStarts','NumSystemHolds','OrigMaxHosts','ProcId','QDate',
+               'NumRestarts','NumShadowStarts','NumSystemHolds','OrigMaxHosts','ProcId', 'PYGLIDEIN_METRIC_TIME_PER_PHOTON', 'QDate',
                'Rank','RecentBlockReadBytes','RecentBlockReadKbytes','RecentBlockReads',
                'RecentBlockWriteBytes','RecentBlockWriteKbytes','RecentBlockWrites',
                'RecentStatsLifetimeStarter','RecentStatsTickTimeStarter','RecentWindowMaxStarter',
@@ -455,6 +455,15 @@ def normalize_gpu(job):
     job[norm_key] = job[raw_key]
 
     def normalize_gpuhrs(job, gpu_identifier=None):
+        """
+        Actual logic for normalizing GPUhrs
+
+        Parameters:
+        -----------
+        job : dict
+        gpu_identifier : string or list of strings
+
+        """
         if job[gpu_ns_per_photon_key] > 0.:
             # glidein reported a (sensical) value, takes preference
             norm_factor = job[gpu_ns_per_photon_key]/gpu_ns_photon_ref
@@ -462,7 +471,7 @@ def normalize_gpu(job):
         elif gpu_identifier is not None:
             # value not reported, look up GPU model spec. in data base
             # prepare for taking averages of multiple gpu types
-            if not isinstance(gpu_identifier, Sequence):
+            if isinstance(gpu_identifier, basestring):
                 gpu_identifier = [gpu_identifier]
             all_known = all(id in gpu_ns_photon for id in gpu_identifier)
             if not all_known:
