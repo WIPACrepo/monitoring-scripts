@@ -471,7 +471,7 @@ def normalize_gpu(job):
         elif gpu_identifier is not None:
             # value not reported, look up GPU model spec. in data base
             # prepare for taking averages of multiple gpu types
-            if isinstance(gpu_identifier, basestring):
+            if isinstance(gpu_identifier, str):
                 gpu_identifier = [gpu_identifier]
             all_known = all(id in gpu_ns_photon for id in gpu_identifier)
             if not all_known:
