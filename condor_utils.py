@@ -762,3 +762,74 @@ def read_from_collector(address, history=False):
             logging.info('got %d entries', i)
         except Exception:
             logging.info('%s failed', schedd_ad['Name'], exc_info=True)
+
+def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1)):
+    """Connect to condor collectors and schedds to pull job ads directly.
+
+    A generator that yields condor job dicts.
+
+    Args:
+        address (str): address of collector
+        history (bool): read history (True) or active queue (default: False)
+    """
+    import htcondor
+    coll = htcondor.Collector(address)
+    start_stamp = time.mktime(after.timetuple())
+    try:
+        gen = coll.query(
+            htcondor.AdTypes.Startd,
+            (
+                "EnteredCurrentState>={}"
+                .format(start_stamp)
+            ),
+            [
+                "Name",
+                "DaemonStartTime",
+                "LastHeardFrom",
+                "TotalCpus",
+                "TotalDisk",
+                "TotalMemory",
+                "TotalGPUs",
+                "TotalSlotCpus",
+                "TotalSlotDisk",
+                "TotalSlotMemory",
+                "TotalSlotGPUs",
+                "SlotType",
+                "GLIDEIN_Site",
+                "GLIDEIN_ResourceName",
+                "Arch",
+                "OpSysAndVer",
+            ],
+        )
+        i = 0
+        for i,entry in enumerate(gen):
+            data = classad_to_dict(entry)
+            for k in "DaemonStartTime", "LastHeardFrom":
+                data[k] = datetime.utcfromtimestamp(data[k])
+            data["@timestamp"] = datetime.utcnow()
+            if not 'GLIDEIN_ResourceName' in data:
+                data['GLIDEIN_ResourceName'] = data['GLIDEIN_Site']
+            # add site
+            if data['GLIDEIN_ResourceName'] in site_names:
+                data['site'] = site_names[data['GLIDEIN_ResourceName']]
+            else:
+                data['site'] = 'other'
+
+            # add countries
+            if data['GLIDEIN_ResourceName'] in countries:
+                data['country'] = countries[data['GLIDEIN_ResourceName']]
+            else:
+                data['country'] = 'other'
+    
+            # add institution
+            if data['GLIDEIN_ResourceName'] in institutions:
+                data['institution'] = institutions[data['GLIDEIN_ResourceName']]
+            else:
+                data['institution'] = 'other'
+            for k in data.keys():
+                if k.startswith('GLIDEIN'):
+                    del data[k]
+            yield data
+        logging.info('got %d entries', i)
+    except Exception:
+        logging.info('failed', exc_info=True)
