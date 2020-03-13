@@ -7,6 +7,7 @@ from datetime import datetime,timedelta
 import time
 import logging
 from collections import OrderedDict, Sequence
+import re
 
 import classad
 
@@ -619,7 +620,7 @@ def filter_keys(data):
         else:
             data[k] = str(data[k])
 
-def is_bad_site(data):
+def is_bad_site(data, site_key='MATCH_EXP_JOBGLIDEIN_ResourceName'):
     if site_key not in data:
         if 'MachineAttrGLIDEIN_SiteResource0' in data:
             data[site_key] = data['MachineAttrGLIDEIN_SiteResource0']
@@ -791,17 +792,13 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
         "TotalDisk",
         "TotalMemory",
         "TotalGPUs",
-        "TotalSlotCpus",
-        "TotalSlotDisk",
-        "TotalSlotMemory",
-        "TotalSlotGPUs",
-        "SlotType",
         "Arch",
         "OpSysAndVer",
-    ]
-    temp_keys = [
         "GLIDEIN_Site",
         "GLIDEIN_ResourceName",
+    ]
+    temp_keys = [
+        "AddressV1",
         "GPU_NAMES",
     ]
     try:
@@ -822,7 +819,18 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
             if not 'GLIDEIN_ResourceName' in data:
                 data['GLIDEIN_ResourceName'] = data['GLIDEIN_Site']
             # add site
-            if data['GLIDEIN_ResourceName'] in site_names:
+            if is_bad_site(data, 'GLIDEIN_ResourceName'):
+                site = get_site_from_domain(data['Name'].split('@')[-1])
+                if site:
+                    data['site'] = site
+                else:
+                    ip = re.match(r'.*?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*', data['AddressV1']).group(1)
+                    site = get_site_from_ip_range(ip)
+                    if site:
+                        data['site'] = site
+                    else:
+                        data['site'] = 'other'
+            elif data['GLIDEIN_ResourceName'] in site_names:
                 data['site'] = site_names[data['GLIDEIN_ResourceName']]
             else:
                 data['site'] = 'other'
@@ -838,6 +846,7 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
                 data['institution'] = institutions[data['GLIDEIN_ResourceName']]
             else:
                 data['institution'] = 'other'
+
             for k in data.keys():
                 if k.startswith('GLIDEIN'):
                     del data[k]
