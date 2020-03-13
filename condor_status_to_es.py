@@ -12,6 +12,7 @@ from functools import partial
 
 import re
 from datetime import datetime, timedelta
+from time import mktime
 
 regex = re.compile(r'((?P<days>\d+?)d)?((?P<hours>\d+?)hr)?((?P<minutes>\d+?)m)?((?P<seconds>\d+?)s)?')
 
@@ -32,6 +33,8 @@ parser.add_argument('-n','--indexname',default='condor_status',
                   help='index name (default condor_status)')
 parser.add_argument('--after', default=timedelta(hours=1),
                   help='time to look back', type=parse_time)
+parser.add_argument('-y', '--dry-run', default=False, action='store_true',
+                  help='query status, but do not ingest into ES')
 parser.add_argument('collectors', nargs='+')
 options = parser.parse_args()
 
@@ -44,13 +47,14 @@ def es_generator(entries):
     for data in entries:
         data['_index'] = options.indexname
         data['_type'] = 'machine_ad'
-        data['_id'] = data['Name']
+        data['_id'] = '{:.0f}-{:s}'.format(time.mktime(data['DaemonStartTime'].timetuple()),data['Name'])
         if not data['_id']:
             continue
         yield data
 
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
+import json
 
 prefix = 'http'
 address = options.address
@@ -65,4 +69,8 @@ es_import = partial(bulk, es, max_retries=20, initial_backoff=2, max_backoff=360
 
 for coll_address in options.collectors:
     gen = es_generator(read_status_from_collector(coll_address, datetime.now()-options.after))
-    success, _ = es_import(gen)
+    if options.dry_run:
+        for hit in gen:
+            logging.info(hit)
+    else:
+        success, _ = es_import(gen)
