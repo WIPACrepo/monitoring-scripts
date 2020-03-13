@@ -14,7 +14,7 @@ import re
 from datetime import datetime, timedelta
 from time import mktime
 
-regex = re.compile(r'((?P<days>\d+?)d)?((?P<hours>\d+?)hr)?((?P<minutes>\d+?)m)?((?P<seconds>\d+?)s)?')
+regex = re.compile(r'((?P<days>\d+?)d)?((?P<hours>\d+?)h)?((?P<minutes>\d+?)m)?((?P<seconds>\d+?)s)?')
 
 def parse_time(time_str):
     parts = regex.match(time_str)

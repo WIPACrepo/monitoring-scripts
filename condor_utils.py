@@ -805,7 +805,7 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
         gen = coll.query(
             htcondor.AdTypes.Startd,
             (
-                "EnteredCurrentState>={}"
+                "SlotType isnt \"Dynamic\" && LastHeardFrom>={}"
                 .format(start_stamp)
             ),
             final_keys + temp_keys
