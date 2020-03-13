@@ -439,7 +439,10 @@ gpu_ns_photon = OrderedDict([
     ('v100', 3.02),
 ])
 
-def normalize_gpu(job):
+def normalize_gpu(job, key='gpuhrs',
+    site_key='MATCH_EXP_JOBGLIDEIN_ResourceName',
+    gpunames_key='MachineAttrGPU_NAMES0'
+    ):
     """
     Will try to normalize GPUhrs found in `job` dictionary
     w.r.t. a reference model defined below. If all methods
@@ -448,10 +451,12 @@ def normalize_gpu(job):
     """
     gpu_ns_per_photon_key = 'PYGLIDEIN_METRIC_TIME_PER_PHOTON'
     gpu_ns_photon_ref = gpu_ns_photon['1080']
-    norm_key = 'gpuhrs_normalized'
-    raw_key = 'gpuhrs'
-    nonnorm_key = 'gpuhrs_nonnormalized'
+    norm_key = '{}_normalized'.format(key)
+    raw_key = key
+    nonnorm_key = '{}_nonnormalized'.format(key)
     # start off by assuming no normalization is necessary
+    if job.get(raw_key, 0) == 0:
+        return
     job[norm_key] = job[raw_key]
 
     def normalize_gpuhrs(job, gpu_identifier=None):
@@ -464,10 +469,10 @@ def normalize_gpu(job):
         gpu_identifier : string or list of strings
 
         """
-        if job[gpu_ns_per_photon_key] > 0.:
+        if job.get(gpu_ns_per_photon_key, 0) > 0.:
             # glidein reported a (sensical) value, takes preference
             norm_factor = job[gpu_ns_per_photon_key]/gpu_ns_photon_ref
-            job[norm_key] = job[raw_key]/norm_factor
+            job[norm_key] = float(job[raw_key]/norm_factor)
         elif gpu_identifier is not None:
             # value not reported, look up GPU model spec. in data base
             # prepare for taking averages of multiple gpu types
@@ -482,16 +487,16 @@ def normalize_gpu(job):
             for (weight, id) in zip(weight_factors, gpu_identifier):
                 weighted_ns_per_photon += weight * gpu_ns_photon[id]
             norm_factor = weighted_ns_per_photon/(sum(weight_factors) * gpu_ns_photon_ref)
-            job[norm_key] = job[raw_key]/norm_factor
+            job[norm_key] = float(job[raw_key]/norm_factor)
         # otherwise, nothing to do here
         return
 
-    if job[gpu_ns_per_photon_key] > 0.:
+    if job.get(gpu_ns_per_photon_key, 0) > 0.:
         normalize_gpuhrs(job)
         return
-    if 'MachineAttrGPU_NAMES0' in job:
+    if gpunames_key in job:
         # glidein reported gpu name, try to find a match
-        gpu_name = job['MachineAttrGPU_NAMES0'].split(',')[0].lower()
+        gpu_name = job[gpunames_key].split(',')[0].lower()
         for name in gpu_ns_photon:
             if name in gpu_name:
                 normalize_gpuhrs(job, gpu_identifier=name)
@@ -775,6 +780,27 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
     import htcondor
     coll = htcondor.Collector(address)
     start_stamp = time.mktime(after.timetuple())
+    final_keys = [
+        "Name",
+        "DaemonStartTime",
+        "LastHeardFrom",
+        "TotalCpus",
+        "TotalDisk",
+        "TotalMemory",
+        "TotalGPUs",
+        "TotalSlotCpus",
+        "TotalSlotDisk",
+        "TotalSlotMemory",
+        "TotalSlotGPUs",
+        "SlotType",
+        "Arch",
+        "OpSysAndVer",
+    ]
+    temp_keys = [
+        "GLIDEIN_Site",
+        "GLIDEIN_ResourceName",
+        "GPU_NAMES",
+    ]
     try:
         gen = coll.query(
             htcondor.AdTypes.Startd,
@@ -782,24 +808,7 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
                 "EnteredCurrentState>={}"
                 .format(start_stamp)
             ),
-            [
-                "Name",
-                "DaemonStartTime",
-                "LastHeardFrom",
-                "TotalCpus",
-                "TotalDisk",
-                "TotalMemory",
-                "TotalGPUs",
-                "TotalSlotCpus",
-                "TotalSlotDisk",
-                "TotalSlotMemory",
-                "TotalSlotGPUs",
-                "SlotType",
-                "GLIDEIN_Site",
-                "GLIDEIN_ResourceName",
-                "Arch",
-                "OpSysAndVer",
-            ],
+            final_keys + temp_keys
         )
         i = 0
         for i,entry in enumerate(gen):
@@ -828,6 +837,10 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
                 data['institution'] = 'other'
             for k in data.keys():
                 if k.startswith('GLIDEIN'):
+                    del data[k]
+            normalize_gpu(data, 'TotalGPUs', 'GLIDEIN_ResourceName', 'GPU_NAMES')
+            for k in temp_keys:
+                if k in data:
                     del data[k]
             yield data
         logging.info('got %d entries', i)
