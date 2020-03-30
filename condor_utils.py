@@ -743,7 +743,7 @@ def read_from_file(filename):
             else:
                 entry += line+'\n'
 
-def read_from_collector(address, history=False):
+def read_from_collector(address, history=False, constraint='true', projection=[]):
     """Connect to condor collectors and schedds to pull job ads directly.
 
     A generator that yields condor job dicts.
@@ -763,9 +763,9 @@ def read_from_collector(address, history=False):
             if history:
                 start_dt = datetime.now()-timedelta(minutes=10)
                 start_stamp = time.mktime(start_dt.timetuple())
-                gen = schedd.history('EnteredCurrentStatus >= {0}'.format(start_stamp),[],10000)
+                gen = schedd.history('(EnteredCurrentStatus >= {0}) && ({1})'.format(start_stamp,constraint),projection,10000)
             else:
-                gen = schedd.query()
+                gen = schedd.query(constraint, projection)
             for i,entry in enumerate(gen):
                 yield classad_to_dict(entry)
             logging.info('got %d entries', i)
