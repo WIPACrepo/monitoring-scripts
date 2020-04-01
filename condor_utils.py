@@ -815,7 +815,10 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
             data = classad_to_dict(entry)
             for k in "DaemonStartTime", "LastHeardFrom":
                 data[k] = datetime.utcfromtimestamp(data[k])
-            data["@timestamp"] = datetime.utcnow()
+            data["@timestamp"] = [data["DaemonStartTime"]]
+            if data["LastHeardFrom"] > data["DaemonStartTime"]:
+                data["@timestamp"].append(data["LastHeardFrom"])
+            data["duration"] = int((data["LastHeardFrom"]-data["DaemonStartTime"]).total_seconds())
             if not 'GLIDEIN_ResourceName' in data:
                 data['GLIDEIN_ResourceName'] = data['GLIDEIN_Site']
             # add site

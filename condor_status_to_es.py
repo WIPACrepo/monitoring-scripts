@@ -58,12 +58,21 @@ parser.add_argument(
     action="store_true",
     help="query status, but do not ingest into ES",
 )
+parser.add_argument(
+    "-v",
+    "--verbose",
+    default=False,
+    action="store_true",
+    help="use verbose logging in ES",
+)
 parser.add_argument("collectors", nargs="+")
 options = parser.parse_args()
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s : %(message)s"
 )
+if options.verbose:
+    logging.getLogger("elasticsearch").setLevel("DEBUG")
 
 
 # note different capitalization conventions for GPU and Cpu
@@ -71,7 +80,7 @@ RESOURCES = ("GPUs", "Cpus", "Memory", "Disk")
 STATUSES = ("evicted", "removed", "finished")
 
 
-def es_generator(entries):
+def update_machines(entries):
     """
     Generate upsert ops from machine classad dictionaries
     """
@@ -83,15 +92,22 @@ def es_generator(entries):
             "_id": "{:.0f}-{:s}".format(
                 time.mktime(data["DaemonStartTime"].timetuple()), data["Name"]
             ),
-            "doc": data,
-            "doc_as_upsert": True,
+            "upsert": data,
+            "script": {
+                "id": options.indexname + "-update-machine",
+                "params": {
+                    "duration": data["duration"],
+                    "LastHeardFrom": data["LastHeardFrom"],
+                },
+            },
         }
 
 
-def update_claims(entries, history=False):
+def update_jobs(entries, history=False):
     """
     Generate updates to claims.* from job classad dictionaries
     """
+
     def parent_slot_name(dynamic_slot_name):
         parts = dynamic_slot_name.split("@")
         match = re.match(r"(slot\d+)_\d+", parts[0])
@@ -146,7 +162,7 @@ def update_claims(entries, history=False):
             "_type": match.hits[0].meta.doc_type,
             "_id": match.hits[0].meta.id,
             "script": {
-                "id": options.indexname + "-update-claims",
+                "id": options.indexname + "-update-jobs",
                 "params": {
                     "job": hit["GlobalJobId"].replace("#", "-").replace(".", "-"),
                     "category": category,
@@ -212,30 +228,48 @@ if not "claims" in machine_ad:
     machine_ad.save(options.indexname, using=es)
     # Claim update, triggered each time a job is removed from a machine
     es.put_script(
-        options.indexname + "-update-claims",
+        options.indexname + "-update-jobs",
         {
             "script": {
                 "source": textwrap.dedent(
                     """
-                    def resources = """
+                    def RESOURCES = """
                     + repr(list(RESOURCES))
+                    + """;
+                    def STATUSES = """
+                    + repr(list(STATUSES))
                     + """;
                     if(ctx._source["jobs."+params.category] == null) {
                         ctx._source["jobs."+params.category] = [];
-                        for (resource in resources) {
+                        for (resource in RESOURCES) {
                             ctx._source["claims."+params.category+"."+resource] = 0;
                         }
                     }
                     if(!ctx._source["jobs."+params.category].contains(params.job)) {
                         ctx._source["jobs."+params.category].add(params.job);
-                        for (resource in resources) {
+                        for (resource in RESOURCES) {
                             if (params.requests.containsKey(resource)) {
                                 ctx._source["claims."+params.category+"."+resource] += params.requests[resource];
                             }
+                            if (!ctx._source.containsKey("Total"+resource) || ctx._source.duration == null) {
+                                continue;
+                            }
+                            double norm = (ctx._source.duration*ctx._source["Total"+resource]).doubleValue();
+                            if (!(norm > 0)) {
+                                continue;
+                            }
+                            double total = 0;
+                            for (status in STATUSES) {
+                                def key = status+"."+resource;
+                                if (ctx._source["claims."+key] != null) {
+                                    ctx._source["occupancy."+key] = ctx._source["claims."+key]/norm;
+                                    total += ctx._source["claims."+key]/norm;
+                                } else {
+                                    ctx._source["occupancy."+key] = 0;
+                                }
+                            }
+                            ctx._source["occupancy.total."+resource] = total;
                         }
-                        // reset duration so that occupancy will be recalculated in
-                        // the next run
-                        ctx._source.duration = null;
                     } else {
                         ctx.op = "none";
                     }
@@ -247,9 +281,9 @@ if not "claims" in machine_ad:
         },
     )
 
-    # Occupancy update, once per run
+    # Occupancy update, triggered every time a glidein increments LastHeardFrom
     es.put_script(
-        options.indexname + "-update-occupancy",
+        options.indexname + "-update-machine",
         {
             "script": {
                 "source": textwrap.dedent(
@@ -260,25 +294,25 @@ if not "claims" in machine_ad:
                     def STATUSES = """
                     + repr(list(STATUSES))
                     + """;
-                    long current_duration = Duration.between(
-                        LocalDateTime.parse(ctx._source.DaemonStartTime),
-                        LocalDateTime.parse(ctx._source.LastHeardFrom)
-                        ).toMillis()/1000;
                     if(ctx._source.duration == null
-                        || ctx._source.duration != current_duration) {
-                        ctx._source.duration = current_duration;
+                        || ctx._source.duration < params.duration) {
+                        ctx._source.duration = params.duration;
+                        if (!(ctx._source["@timestamp"] instanceof ArrayList)) {
+                            ctx._source["@timestamp"] = [ctx._source.DaemonStartTime, ctx._source.LastHeardFrom];
+                        }
+                        ctx._source["@timestamp"].add(params.LastHeardFrom);
+                        ctx._source.LastHeardFrom = params.LastHeardFrom;
                         for (resource in RESOURCES) {
                             if (!ctx._source.containsKey("Total"+resource)) {
                                 continue;
                             }
-                            double norm = (current_duration*ctx._source["Total"+resource]).doubleValue();
+                            double norm = (ctx._source.duration*ctx._source["Total"+resource]).doubleValue();
                             if (!(norm > 0)) {
                                 continue;
                             }
                             double total = 0;
                             for (status in STATUSES) {
                                 def key = status+"."+resource;
-                                // def blerh = ctx._source["claims."+key]/norm;
                                 if (ctx._source["claims."+key] != null) {
                                     ctx._source["occupancy."+key] = ctx._source["claims."+key]/norm;
                                     total += ctx._source["claims."+key]/norm;
@@ -289,7 +323,7 @@ if not "claims" in machine_ad:
                             ctx._source["occupancy.total."+resource] = total;
                         }
                     } else {
-                        ctx.op = "noop";
+                        ctx.op = "none";
                     }
                     """
                 ),
@@ -301,13 +335,13 @@ if not "claims" in machine_ad:
 
 for coll_address in options.collectors:
 
-    gen = es_generator(
+    gen = update_machines(
         read_status_from_collector(coll_address, datetime.now() - options.after)
     )
     success = es_import(gen)
 
     # Update claims from evicted jobs
-    gen = update_claims(
+    gen = update_jobs(
         read_from_collector(
             coll_address,
             constraint="(LastVacateTime > {}) && ((LastVacateTime-JobLastStartDate))>60".format(
@@ -327,7 +361,7 @@ for coll_address in options.collectors:
     success = es_import(gen)
 
     # Update claims from finished jobs
-    gen = update_claims(
+    gen = update_jobs(
         read_from_collector(
             coll_address,
             constraint="!isUndefined(LastRemoteHost)",
@@ -346,15 +380,3 @@ for coll_address in options.collectors:
         history=True,
     )
     success = es_import(gen)
-
-# Normalize claims to running time to get occupancy of each slot. Note that
-# these updates can conflict with the ones issued just before by update_claims.
-# Skip these with conflicts=proceed, as they will get picked up in the next run
-# anyhow.
-if not options.dry_run:
-    (
-        edsl.UpdateByQuery(index=options.indexname, using=es)
-        .filter("range", LastHeardFrom={"gte": datetime.utcnow() - options.after},)
-        .script(id=options.indexname + "-update-occupancy",)
-        .params(conflicts="proceed")
-    ).execute()
