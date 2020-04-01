@@ -234,192 +234,100 @@ reserved_domains = {
     'zeuthen.desy.de': 'DESY-ZN',
 }
 
-site_names = {
-    'DESY-ZN': 'DE-DESY',
-    'DESY-HH': 'DE-DESY',
-    'DESY': 'DE-DESY',
-    'Brussels': 'BE-IIHE',
-    'T2B_BE_IIHE': 'BE-IIHE',
-    'BEgrid-ULB-VUB': 'BE-IIHE',
-    'Guillimin': 'CA-McGill',
-    'CA-MCGILL-CLUMEQ-T2': 'CA-McGill',
-    'mainz': 'DE-Mainz',
-    'mainzgrid': 'DE-Mainz',
-    'Mainz_MogonI': 'DE-Mainz',
-    'CA-SCINET-T2': 'CA-Toronto',
-    'Alberta': 'CA-Alberta',
-    'parallel': 'CA-Alberta',
-    'jasper': 'CA-Alberta',
-    'Illume': 'CA-Alberta',
-    'illume': 'CA-Alberta',
-    'illume-new': 'CA-Alberta',
-    'Cedar': 'CA-SFU',
-    'RWTH-Aachen': 'DE-Aachen',
-    'aachen': 'DE-Aachen',
-    'wuppertalprod': 'DE-Wuppertal',
-    'TUM': 'DE-Munich',
-    'Uppsala': 'SE-Uppsala',
-    'Bartol': 'US-Bartol',
-    'UNI-DORTMUND': 'DE-Dortmund',
-    'LIDO_Dortmund': 'DE-Dortmund',
-    'PHIDO_Dortmund': 'DE-Dortmund',
-    'LIDO3_Dortmund_TEST': 'DE-Dortmund',
-    'UKI-NORTHGRID-MAN-HEP': 'UK-Manchester',
-    'UKI-LT2-QMUL': 'UK-Manchester',
-    'Bridges': 'US-XSEDE-PSC',
-    'Comet': 'US-XSEDE-SDSC',
-    'HOSTED_STANFORD': 'XSEDE-XStream',
-    'Xstream': 'US-XSEDE-Stanford',
-    'xstream': 'US-XSEDE-Stanford',
-    'NPX': 'US-NPX',
-    'GZK': 'US-GZK',
-    'CHTC': 'US-CHTC',
-    'Marquette': 'US-Marquette',
-    'UMD': 'US-UMD',
-    'MSU': 'US-MSU',
-    'msu': 'US-MSU',
-    'PSU': 'US-PSU',
-    'Japan': 'JP-Chiba',
-    'Chiba': 'JP-Chiba',
-    'nbi': 'DK-NBI',
-    'NBI': 'DK-NBI',
-    'NBI_T3': 'DK-NBI',
-    'SDSC-PRP': 'US-OSG-UCSD',
-    'SU-ITS-CE3': 'US-OSG-Syracuse',
-    'SU-ITS-CE2': 'US-OSG-Syracuse',
-    'Syracuse': 'US-OSG-Syracuse',
-    'Crane': 'US-OSG-Crane',
-    'UCSDT2': 'US-OSG-UCSDT2',
-    'BNL-ATLAS': 'US-OSG-BNL-ATLAS',
-    'CIT_CMS_T2': 'US-OSG-Caltech-HEP',
-    'Indiana': 'US-OSG-MWT2',
-    'Stampede2': 'US-XSEDE-TACC',
-    'Clemson-Palmetto': 'US-OSG-Clemson'
-}
+def get_site_from_resource(resource):
+    site_names = {
+        'DESY-ZN': 'DE-DESY',
+        'DESY-HH': 'DE-DESY',
+        'DESY': 'DE-DESY',
+        'Brussels': 'BE-IIHE',
+        'T2B_BE_IIHE': 'BE-IIHE',
+        'BEgrid-ULB-VUB': 'BE-IIHE',
+        'Guillimin': 'CA-McGill',
+        'CA-MCGILL-CLUMEQ-T2': 'CA-McGill',
+        'mainz': 'DE-Mainz',
+        'mainzgrid': 'DE-Mainz',
+        'Mainz_MogonI': 'DE-Mainz',
+        'CA-SCINET-T2': 'CA-Toronto',
+        'Alberta': 'CA-Alberta',
+        'parallel': 'CA-Alberta',
+        'jasper': 'CA-Alberta',
+        'Illume': 'CA-Alberta',
+        'illume': 'CA-Alberta',
+        'illume-new': 'CA-Alberta',
+        'Cedar': 'CA-SFU',
+        'RWTH-Aachen': 'DE-Aachen',
+        'aachen': 'DE-Aachen',
+        'wuppertalprod': 'DE-Wuppertal',
+        'TUM': 'DE-Munich',
+        'Uppsala': 'SE-Uppsala',
+        'Bartol': 'US-Bartol',
+        'UNI-DORTMUND': 'DE-Dortmund',
+        'LIDO_Dortmund': 'DE-Dortmund',
+        'PHIDO_Dortmund': 'DE-Dortmund',
+        'LIDO3_Dortmund_TEST': 'DE-Dortmund',
+        'LiDO3_Dortmund': 'DE-Dortmund',
+        'UKI-NORTHGRID-MAN-HEP': 'UK-Manchester',
+        'UKI-LT2-QMUL': 'UK-Manchester',
+        'Bridges': 'US-XSEDE-PSC',
+        'Comet': 'US-XSEDE-SDSC',
+        'HOSTED_STANFORD': 'XSEDE-XStream',
+        'Xstream': 'US-XSEDE-Stanford',
+        'xstream': 'US-XSEDE-Stanford',
+        'NPX': 'US-NPX',
+        'GZK': 'US-GZK',
+        'CHTC': 'US-CHTC',
+        'Marquette': 'US-Marquette',
+        'UMD': 'US-UMD',
+        'MSU': 'US-MSU',
+        'msu': 'US-MSU',
+        'PSU': 'US-PSU',
+        'Japan': 'JP-Chiba',
+        'Chiba': 'JP-Chiba',
+        'nbi': 'DK-NBI',
+        'NBI': 'DK-NBI',
+        'NBI_T3': 'DK-NBI',
+        'SDSC-PRP': 'US-OSG-UCSD',
+        'SU-ITS-CE3': 'US-OSG-Syracuse',
+        'SU-ITS-CE2': 'US-OSG-Syracuse',
+        'Syracuse': 'US-OSG-Syracuse',
+        'Crane': 'US-OSG-Crane',
+        'UCSDT2': 'US-OSG-UCSDT2',
+        'BNL-ATLAS': 'US-OSG-BNL-ATLAS',
+        'CIT_CMS_T2': 'US-OSG-Caltech-HEP',
+        'Indiana': 'US-OSG-MWT2',
+        'MWT2':  'US-OSG-MWT2',
+        'Stampede2': 'US-XSEDE-TACC',
+        'Clemson-Palmetto': 'US-OSG-Clemson',
+        'SLATE_US_UIUC_HTC': 'US-OSG-UIUC',
+        'SLATE_US_UUTAH_KINGSPEAK': 'US-OSG-UUTAH',
+        'SLATE_US_UUTAH_LONEPEAK': 'US-OSG-UUTAH',
+        'SLATE_US_UUTAH_NOTCHPEAK': 'US-OSG-UUTAH',
+    }
+    if resource in site_names:
+        return site_names[resource]
+    elif resource.startswith('SLATE'):
+        parts = resource.split('_')[1:]
+        return '-'.join([parts[0], 'OSG', parts[1]])
+    else:
+        return 'other'
 
-countries = {
-    'DESY-ZN': 'DE',
-    'DESY-HH': 'DE',
-    'DESY': 'DE',
-    'Brussels': 'BE',
-    'T2B_BE_IIHE': 'BE',
-    'BEgrid-ULB-VUB': 'BE',
-    'Guillimin': 'CA',
-    'CA-MCGILL-CLUMEQ-T2': 'CA',
-    'mainz': 'DE',
-    'mainzgrid': 'DE',
-    'Mainz_MogonI': 'DE',
-    'CA-SCINET-T2': 'CA',
-    'Alberta': 'CA',
-    'parallel': 'CA',
-    'jasper': 'CA',
-    'Illume': 'CA',
-    'illume': 'CA',
-    'illume-new': 'CA',
-    'Cedar': 'CA',
-    'RWTH-Aachen': 'DE',
-    'aachen': 'DE',
-    'wuppertalprod': 'DE',
-    'TUM': 'DE',
-    'Uppsala': 'SE',
-    'Bartol': 'US',
-    'UNI-DORTMUND': 'DE',
-    'LIDO_Dortmund': 'DE',
-    'PHIDO_Dortmund': 'DE',
-    'LIDO3_Dortmund_TEST': 'DE',
-    'UKI-NORTHGRID-MAN-HEP': 'UK',
-    'UKI-LT2-QMUL': 'UK',
-    'Bridges': 'US',
-    'Comet': 'US',
-    'HOSTED_STANFORD': 'US',
-    'Xstream': 'US',
-    'xstream': 'US',
-    'NPX': 'US',
-    'GZK': 'US',
-    'CHTC': 'US',
-    'Marquette': 'US',
-    'UMD': 'US',
-    'MSU': 'US',
-    'msu': 'US',
-    'PSU': 'US',
-    'Japan': 'JP',
-    'Chiba': 'JP',
-    'nbi': 'DK',
-    'NBI': 'DK',
-    'NBI_T3': 'DK',
-    'SDSC-PRP': 'US',
-    'SU-ITS-CE3': 'US',
-    'SU-ITS-CE2': 'US',
-    'Crane': 'US',
-    'UCSDT2': 'US',
-    'BNL-ATLAS': 'US',
-    'CIT_CMS_T2': 'US',
-    'Indiana': 'US',
-    'Stampede2': 'US',
-    'Clemson-Palmetto': 'US'
-}
+def get_country_from_site(site):
+    if site == 'other':
+        return 'other'
+    else:
+        return site.split('-')[0]
 
-institutions = {
-    'DESY-ZN': 'DESY',
-    'DESY-HH': 'DESY',
-    'DESY': 'DESY',
-    'Brussels': 'VUB',
-    'T2B_BE_IIHE': 'VUB',
-    'BEgrid-ULB-VUB': 'VUB',
-    'Guillimin': 'UAlberta',
-    'CA-MCGILL-CLUMEQ-T2': 'UAlberta',
-    'mainz': 'Mainz',
-    'mainzgrid': 'Mainz',
-    'Mainz_MogonI': 'Mainz',
-    'CA-SCINET-T2': 'UAlberta',
-    'Alberta': 'UAlberta',
-    'parallel': 'UAlberta',
-    'jasper': 'UAlberta',
-    'Illume': 'UAlberta',
-    'illume': 'UAlberta',
-    'illume-new': 'UAlberta',
-    'Cedar': 'UAlberta',
-    'RWTH-Aachen': 'Aachen',
-    'aachen': 'Aachen',
-    'wuppertalprod': 'Wuppertal',
-    'TUM': 'TUM',
-    'Uppsala': 'Uppsala',
-    'Bartol': 'Bartol',
-    'UNI-DORTMUND': 'Dortmund',
-    'LIDO_Dortmund': 'Dortmund',
-    'PHIDO_Dortmund': 'Dortmund',
-    'LIDO3_Dortmund_TEST': 'Dortmund',
-    'UKI-NORTHGRID-MAN-HEP': 'QML',
-    'UKI-LT2-QMUL': 'QML',
-    'Bridges': 'XSEDE',
-    'Comet': 'XSEDE',
-    'HOSTED_STANFORD': 'OSG',
-    'Xstream': 'XSEDE',
-    'xstream': 'XSEDE',
-    'NPX': 'UW',
-    'GZK': 'UW',
-    'CHTC': 'UW',
-    'Marquette': 'Marquette',
-    'UMD': 'UMD',
-    'MSU': 'MSU',
-    'msu': 'MSU',
-    'PSU': 'PSU',
-    'Japan': 'Chiba',
-    'Chiba': 'Chiba',
-    'nbi': 'NBI',
-    'NBI': 'NBI',
-    'NBI_T3': 'NBI',
-    'SDSC-PRP': 'OSG',
-    'SU-ITS-CE3': 'OSG',
-    'SU-ITS-CE2': 'OSG',
-    'Crane': 'OSG',
-    'UCSDT2': 'OSG',
-    'BNL-ATLAS': 'OSG',
-    'CIT_CMS_T2': 'OSG',
-    'Indiana': 'OSG',
-    'Stampede2': 'XSEDE',
-    'Clemson-Palmetto': 'OSG'
-}
+def get_institution_from_site(site):
+    if site == 'other':
+        return 'other'
+    else:
+        parts = site.split('-')
+        if 'OSG' in parts:
+            return 'OSG'
+        elif 'XSEDE' in parts:
+            return 'XSEDE'
+        else:
+            return '-'.join(parts[1:])
 
 # pre-estimated values
 gpu_ns_photon = OrderedDict([
@@ -686,22 +594,13 @@ def add_classads(data):
         data[site_key] = 'Illume'
 
     # add site
-    if data[site_key] in site_names:
-        data['site'] = site_names[data[site_key]]
-    else:
-        data['site'] = 'other'
+    data['site'] = get_site_from_resource(data[site_key])
 
     # add countries
-    if data[site_key] in countries:
-        data['country'] = countries[data[site_key]]
-    else:
-        data['country'] = 'other'
+    data['country'] = get_country_from_site(data['site'])
 
     # add institution
-    if data[site_key] in institutions:
-        data['institution'] = institutions[data[site_key]]
-    else:
-        data['institution'] = 'other'
+    data['institution'] = get_institution_from_site(data['site'])
 
     # Add gpuhrs and cpuhrs
     data['gpuhrs'] = data.get('Requestgpus', 0.) * data['walltimehrs']
@@ -795,12 +694,13 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
         "Arch",
         "OpSysAndVer",
         "GLIDEIN_Site",
-        "GLIDEIN_ResourceName",
+        "GLIDEIN_SiteResource",
     ]
     temp_keys = [
         "AddressV1",
         "GPU_NAMES",
     ]
+    site_key = "GLIDEIN_SiteResource"
     try:
         gen = coll.query(
             htcondor.AdTypes.Startd,
@@ -819,10 +719,13 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
             if data["LastHeardFrom"] > data["DaemonStartTime"]:
                 data["@timestamp"].append(data["LastHeardFrom"])
             data["duration"] = int((data["LastHeardFrom"]-data["DaemonStartTime"]).total_seconds())
-            if not 'GLIDEIN_ResourceName' in data:
-                data['GLIDEIN_ResourceName'] = data['GLIDEIN_Site']
+            # Pick up resource names from OSG glideins (GLIDEIN_SiteResource) and pyglidein (usually GLIDEIN_ResourceName="ResourceName")
+            if data.get(site_key, 'ResourceName') == 'ResourceName':
+                data[site_key] = data['GLIDEIN_Site']
+            data['resource'] = data[site_key]
+
             # add site
-            if is_bad_site(data, 'GLIDEIN_ResourceName'):
+            if is_bad_site(data, site_key):
                 site = get_site_from_domain(data['Name'].split('@')[-1])
                 if site:
                     data['site'] = site
@@ -833,27 +736,19 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
                         data['site'] = site
                     else:
                         data['site'] = 'other'
-            elif data['GLIDEIN_ResourceName'] in site_names:
-                data['site'] = site_names[data['GLIDEIN_ResourceName']]
             else:
-                data['site'] = 'other'
+                data['site'] = get_site_from_resource(data[site_key])
 
             # add countries
-            if data['GLIDEIN_ResourceName'] in countries:
-                data['country'] = countries[data['GLIDEIN_ResourceName']]
-            else:
-                data['country'] = 'other'
-    
+            data['country'] = get_country_from_site(data['site'])
+
             # add institution
-            if data['GLIDEIN_ResourceName'] in institutions:
-                data['institution'] = institutions[data['GLIDEIN_ResourceName']]
-            else:
-                data['institution'] = 'other'
+            data['institution'] = get_institution_from_site(data['site'])
 
             for k in data.keys():
                 if k.startswith('GLIDEIN'):
                     del data[k]
-            normalize_gpu(data, 'TotalGPUs', 'GLIDEIN_ResourceName', 'GPU_NAMES')
+            normalize_gpu(data, 'TotalGPUs', 'GLIDEIN_SiteResource', 'GPU_NAMES')
             for k in temp_keys:
                 if k in data:
                     del data[k]
