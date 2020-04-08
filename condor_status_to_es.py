@@ -254,7 +254,7 @@ if not "claims" in machine_ad:
                             if (!ctx._source.containsKey("Total"+resource) || ctx._source.duration == null) {
                                 continue;
                             }
-                            double norm = (ctx._source.duration*ctx._source["Total"+resource]).doubleValue();
+                            double norm = (ctx._source.duration.doubleValue())*(ctx._source["Total"+resource].doubleValue());
                             if (!(norm > 0)) {
                                 continue;
                             }
@@ -306,7 +306,7 @@ if not "claims" in machine_ad:
                             if (!ctx._source.containsKey("Total"+resource)) {
                                 continue;
                             }
-                            double norm = (ctx._source.duration*ctx._source["Total"+resource]).doubleValue();
+                            double norm = (ctx._source.duration.doubleValue())*(ctx._source["Total"+resource].doubleValue());
                             if (!(norm > 0)) {
                                 continue;
                             }
