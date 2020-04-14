@@ -77,7 +77,7 @@ if options.verbose:
 
 # note different capitalization conventions for GPU and Cpu
 RESOURCES = ("GPUs", "Cpus", "Memory", "Disk")
-STATUSES = ("evicted", "removed", "finished")
+STATUSES = ("evicted", "removed", "finished", "failed")
 
 
 def update_machines(entries):
@@ -143,8 +143,10 @@ def update_jobs(entries, history=False):
         if history:
             if hit["JobStatus"] == 3:
                 category = "removed"
-            else:
+            elif hit["ExitCode"] == 0:
                 category = "finished"
+            else:
+                category = "failed"
             walltime = float(hit["EnteredCurrentStatus"] - hit["JobCurrentStartDate"])
         else:
             walltime = float(hit["LastVacateTime"] - hit["JobLastStartDate"])
@@ -196,7 +198,7 @@ def es_import(document_generator):
 machine_ad = edsl.Mapping.from_es(
     doc_type="machine_ad", index=options.indexname, using=es
 )
-if not "claims" in machine_ad:
+if not "claims" in machine_ad or not "failed" in machine_ad.to_dict()['machine_ad']['properties']['claims']['properties']:
     machine_ad.field(
         "jobs",
         edsl.Object(properties={status: edsl.Text(multi=True) for status in STATUSES}),
@@ -212,7 +214,6 @@ if not "claims" in machine_ad:
             }
         ),
     )
-    machine_ad.save(options.indexname, using=es)
     machine_ad.field(
         "occupancy",
         edsl.Object(
@@ -372,6 +373,7 @@ for coll_address in options.collectors:
                 "JobCurrentStartDate",
                 "EnteredCurrentStatus",
                 "JobStatus",
+                "ExitCode",
                 "LastRemoteHost",
             ]
             + ["Request" + resource for resource in RESOURCES],
