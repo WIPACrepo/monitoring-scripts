@@ -128,7 +128,10 @@ def update_jobs(entries, history=False):
         if history:
             t0 = hit["JobCurrentStartDate"]
         else:
-            t0 = hit["JobLastStartDate"]
+            if hit["JobStatus"] == 5:
+                t0 = hit["JobCurrentStartDate"]
+            else:
+                t0 = hit["JobLastStartDate"]
         ms = ms.add(
             Search()
             .filter("term", Name__keyword=parent_slot_name(hit["LastRemoteHost"]))
@@ -149,8 +152,17 @@ def update_jobs(entries, history=False):
                 category = "failed"
             walltime = float(hit["EnteredCurrentStatus"] - hit["JobCurrentStartDate"])
         else:
-            walltime = float(hit["LastVacateTime"] - hit["JobLastStartDate"])
-            category = "evicted"
+            # NB: if a job is evicted from one slot, held on another, and then
+            # removed from the queue, there's no way to recover the time that
+            # may have elapsed between hold and removal. To handle this case,
+            # we treat held jobs as a subcategory of removed jobs, so that they
+            # will not be counted again when encountered in the history.
+            if hit["JobStatus"] == 5:
+                walltime = float(hit["EnteredCurrentStatus"] - hit["JobCurrentStartDate"])
+                category = "removed"
+            else:
+                walltime = float(hit["LastVacateTime"] - hit["JobLastStartDate"])
+                category = "evicted"
 
         # normalize capitalization of requests
         requests = {resource: 0 for resource in RESOURCES}
@@ -341,17 +353,22 @@ for coll_address in options.collectors:
     )
     success = es_import(gen)
 
-    # Update claims from evicted jobs
+    # Update claims from evicted and held jobs
+    after = time.mktime((datetime.now() - timedelta(minutes=10)).timetuple())
     gen = update_jobs(
         read_from_collector(
             coll_address,
-            constraint="(LastVacateTime > {}) && ((LastVacateTime-JobLastStartDate))>60".format(
-                time.mktime((datetime.now() - timedelta(minutes=10)).timetuple())
-            ),
+            constraint=(
+                "((LastVacateTime > {}) && ((LastVacateTime-JobLastStartDate))>60)"
+                + " || ((JobStatus == 5) && (EnteredCurrentStatus > {}))"
+            ).format(after, after),
             projection=[
                 "GlobalJobId",
                 "NumJobStarts",
+                "JobStatus",
                 "JobLastStartDate",
+                "JobCurrentStartDate",
+                "EnteredCurrentStatus",
                 "LastVacateTime",
                 "LastRemoteHost",
             ]
