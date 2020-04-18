@@ -255,14 +255,14 @@ if not "claims" in machine_ad or not "failed" in machine_ad.to_dict()['machine_a
                     if(ctx._source["jobs."+params.category] == null) {
                         ctx._source["jobs."+params.category] = [];
                         for (resource in RESOURCES) {
-                            ctx._source["claims."+params.category+"."+resource] = 0;
+                            ctx._source["claims."+params.category+"."+resource] = 0.0;
                         }
                     }
                     if(!ctx._source["jobs."+params.category].contains(params.job)) {
                         ctx._source["jobs."+params.category].add(params.job);
                         for (resource in RESOURCES) {
                             if (params.requests.containsKey(resource)) {
-                                ctx._source["claims."+params.category+"."+resource] += params.requests[resource];
+                                ctx._source["claims."+params.category+"."+resource] += params.requests[resource].doubleValue();
                             }
                             if (!ctx._source.containsKey("Total"+resource) || ctx._source.duration == null) {
                                 continue;
