@@ -26,7 +26,7 @@ def parse_timedelta(time_str):
     if not any([v is not None for v in list(parts.values())]):
         raise ValueError
     time_params = {}
-    for (name, param) in list(parts.items()):
+    for (name, param) in parts.items():
         if param:
             time_params[name] = float(param)
     return datetime.timedelta(**time_params)
@@ -196,7 +196,7 @@ def scan_aggs(search, source_aggs, inner_aggs={}, size=10):
     def run_search(**kwargs):
         s = search[:0]
         s.aggs.bucket("comp", "composite", sources=source_aggs, size=size, **kwargs)
-        for agg_name, agg in list(inner_aggs.items()):
+        for agg_name, agg in inner_aggs.items():
             s.aggs["comp"][agg_name] = agg
         return s.execute()
 

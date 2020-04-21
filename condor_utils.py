@@ -614,7 +614,7 @@ def add_classads(data):
 
 def classad_to_dict(c):
     ret = {}
-    for k in list(c.keys()):
+    for k in c.keys():
         try:
             ret[k] = c.eval(k)
         except TypeError:

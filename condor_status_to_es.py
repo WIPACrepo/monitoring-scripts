@@ -34,7 +34,7 @@ def parse_time(time_str):
         raise ValueError
     parts = parts.groupdict()
     time_params = {}
-    for (name, param) in list(parts.items()):
+    for (name, param) in parts.items():
         if param:
             time_params[name] = int(param)
     return timedelta(**time_params)
