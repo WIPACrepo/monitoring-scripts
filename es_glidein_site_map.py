@@ -216,7 +216,7 @@ def draw_google_map(sites, outfile="map.html"):
             try:
                 output += makePath%(site_locs[s][0], site_locs[s][1])
             except Exception as e:
-                print((s, site_locs[s], e))
+                print(s, site_locs[s], e)
                 raise
 
     output += """
