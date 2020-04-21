@@ -1,9 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Aggregate site info from ES, and make an html map.
 """
 
-from __future__ import print_function
+
 import os
 import glob
 from optparse import OptionParser
@@ -132,11 +132,11 @@ def draw_mpl_map(glideinwms, pyglidein, title='Glidein', outfile='map.png'):
                                   site_locs[s][1], site_locs[s][0],
                                   linewidth=1, color='#40E0D0', label='GlideinWMS' if i==0 else '_nolegend_')
             except Exception as e:
-                print(s, site_locs[s], e)
+                print((s, site_locs[s], e))
                 #raise
                 lats = [43.0731, site_locs[s][0]]
                 lons = [-89.4012, site_locs[s][1]]
-                xx, yy = map(lons, lats)  
+                xx, yy = list(map(lons, lats))  
                 map.plot(xx, yy, linewidth=1, color='#40E0D0', label='GlideinWMS' if i==0 else '_nolegend_')
     for i,s in enumerate(pyglidein):
         if s in site_locs and site_locs[s] != (43.0731, -89.4012):
@@ -145,11 +145,11 @@ def draw_mpl_map(glideinwms, pyglidein, title='Glidein', outfile='map.png'):
                                   site_locs[s][1], site_locs[s][0],
                                   linestyle='--', linewidth=1, color='#FFA500', label='Pyglidein' if i==0 else '_nolegend_')
             except Exception as e:
-                print(s, site_locs[s], e)
+                print((s, site_locs[s], e))
                 #raise
                 lats = [43.0731, site_locs[s][0]]
                 lons = [-89.4012, site_locs[s][1]]
-                xx, yy = map(lons, lats)  
+                xx, yy = list(map(lons, lats))  
                 map.plot(xx, yy, linestyle='--', linewidth=1, color='#FFA500', label='Pyglidein' if i==0 else '_nolegend_')
     
     plt.title(title)
@@ -216,7 +216,7 @@ def draw_google_map(sites, outfile="map.html"):
             try:
                 output += makePath%(site_locs[s][0], site_locs[s][1])
             except Exception as e:
-                print(s, site_locs[s], e)
+                print((s, site_locs[s], e))
                 raise
 
     output += """
@@ -277,7 +277,7 @@ def es_agg(query):
     return sites
 
 if options.type in queries:
-    print('query:',options.type)
+    print(('query:',options.type))
     glideinwms = es_agg(queries['glideinwms'])
     pyglidein = es_agg(queries['pyglidein'])
 else:

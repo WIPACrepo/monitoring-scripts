@@ -1,9 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Read from condor history and write to elasticsearch
 """
 
-from __future__ import print_function
+
 import os
 import glob
 from optparse import OptionParser

@@ -1,5 +1,5 @@
 BootStrap: docker
-From: centos:7
+From: centos:8
 
 %files
 condor_history_to_elasticsearch.py
@@ -7,7 +7,7 @@ condor_history_to_elasticsearch.py
 %post
 mkdir /data
 
-yum -y install epel-release
-yum -y upgrade ca-certificates --disablerepo=epel
-yum install -y python-pip
-pip install elasticsearch htcondor requests
+dnf -y install epel-release
+dnf -y upgrade ca-certificates --disablerepo=epel
+dnf install -y python3-pip
+pip3 install 'elasticsearch>=6.0.0,<7.0.0' 'elasticsearch-dsl>=6.0.0,<7.0.0' htcondor requests

@@ -1,9 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Read from condor status and write to elasticsearch
 """
 
-from __future__ import print_function
+
 
 import glob
 import json
@@ -34,7 +34,7 @@ def parse_time(time_str):
         raise ValueError
     parts = parts.groupdict()
     time_params = {}
-    for (name, param) in parts.iteritems():
+    for (name, param) in list(parts.items()):
         if param:
             time_params[name] = int(param)
     return timedelta(**time_params)

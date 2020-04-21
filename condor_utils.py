@@ -1,4 +1,4 @@
-from __future__ import print_function
+
 import os
 import glob
 import gzip
@@ -498,7 +498,7 @@ def filter_keys(data):
             data['Requestgpus'] = data[k]
             del data[k]
 
-    for k in data.keys():
+    for k in list(data.keys()):
         if k not in good_keys:
             del data[k]
     for k in good_keys:
@@ -614,7 +614,7 @@ def add_classads(data):
 
 def classad_to_dict(c):
     ret = {}
-    for k in c.keys():
+    for k in list(c.keys()):
         try:
             ret[k] = c.eval(k)
         except TypeError:
@@ -745,7 +745,7 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
             # add institution
             data['institution'] = get_institution_from_site(data['site'])
 
-            for k in data.keys():
+            for k in list(data.keys()):
                 if k.startswith('GLIDEIN'):
                     del data[k]
             normalize_gpu(data, 'TotalGPUs', 'GLIDEIN_SiteResource', 'GPU_NAMES')

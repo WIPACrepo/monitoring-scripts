@@ -1,4 +1,6 @@
-from __future__ import print_function
+#!/usr/bin/env python3
+
+
 import os
 import glob
 import gzip
@@ -56,7 +58,7 @@ good_keys = set(['JobStatus','Cmd','Owner','AccountingGroup',
 ])
 
 def filter_keys(data):
-    for k in data.keys():
+    for k in list(data.keys()):
         if k not in good_keys:
             del data[k]
 

@@ -1,9 +1,9 @@
-FROM centos:7
+FROM centos:8
 
-RUN yum -y install epel-release && \
-    yum -y upgrade ca-certificates --disablerepo=epel && \
-    yum install -y python-pip && \
-    pip install 'elasticsearch>=6.0.0,<7.0.0' 'elasticsearch-dsl>=6.0.0,<7.0.0' htcondor requests
+RUN dnf -y install epel-release && \
+    dnf -y upgrade ca-certificates --disablerepo=epel && \
+    dnf install -y python3-pip && \
+    pip3 install 'elasticsearch>=6.0.0,<7.0.0' 'elasticsearch-dsl>=6.0.0,<7.0.0' htcondor requests
 
 COPY . /monitoring
 
