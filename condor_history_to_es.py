@@ -16,6 +16,9 @@ parser.add_option('-n','--indexname',default='condor',
                   help='index name (default condor)')
 parser.add_option('--dailyindex', default=False, action='store_true',
                   help='Index pattern daily')
+parser.add_option("-y", "--dry-run", default=False,
+                  action="store_true",
+                  help="query jobs, but do not ingest into ES",)
 parser.add_option('--collectors', default=False, action='store_true',
                   help='Args are collector addresses, not files')
 (options, args) = parser.parse_args()
@@ -51,15 +54,25 @@ url = '{}://{}'.format(prefix, address)
 logging.info('connecting to ES at %s',url)
 es = Elasticsearch(hosts=[url],
                    timeout=5000)
-es_import = partial(bulk, es, max_retries=20, initial_backoff=2, max_backoff=3600)
+
+def es_import(document_generator):
+    if options.dry_run:
+        import json
+        import sys
+        for hit in document_generator:
+            json.dump(hit, sys.stdout)
+        success = True
+    else:
+        success, _ = bulk(es, document_generator, max_retries=20, initial_backoff=2, max_backoff=3600)
+    return success
 
 if options.collectors:
     for coll_address in args:
         gen = es_generator(read_from_collector(coll_address, history=True))
-        success, _ = es_import(gen)
+        success = es_import(gen)
 else:
     for path in args:
         for filename in glob.iglob(path):
             gen = es_generator(read_from_file(filename))
-            success, _ = es_import(gen)
+            success = es_import(gen)
             logging.info('finished processing %s', filename)

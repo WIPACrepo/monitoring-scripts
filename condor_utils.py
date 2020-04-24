@@ -61,7 +61,9 @@ good_keys = {
     'JobLastStartDate':0.,
     'LastHoldReason':'',
     'LastRemotePool':'',
-    'PRESIGNED_GET_URL':''
+    'PRESIGNED_GET_URL':'',
+    'OriginalTime':0.,
+    'MemoryUsage':0.,
 }
 
 site_key = 'MATCH_EXP_JOBGLIDEIN_ResourceName'
@@ -499,7 +501,7 @@ def filter_keys(data):
             del data[k]
 
     for k in list(data.keys()):
-        if k not in good_keys:
+        if not (k in good_keys or ('IceProd' in k)):
             del data[k]
     for k in good_keys:
         if k not in data:
