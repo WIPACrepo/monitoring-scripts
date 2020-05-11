@@ -258,6 +258,7 @@ def get_site_from_resource(resource):
         'illume-new': 'CA-Alberta',
         'Cedar': 'CA-SFU',
         'RWTH-Aachen': 'DE-Aachen',
+        'RWTHaachen': 'DE-Aachen',
         'aachen': 'DE-Aachen',
         'wuppertalprod': 'DE-Wuppertal',
         'TUM': 'DE-Munich',
