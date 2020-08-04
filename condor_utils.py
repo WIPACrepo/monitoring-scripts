@@ -286,6 +286,7 @@ def get_site_from_resource(resource):
         'UMD': 'US-UMD',
         'MSU': 'US-MSU',
         'msu': 'US-MSU',
+        'MSU-dedicated': 'US-MSU',
         'PSU': 'US-PSU',
         'Japan': 'JP-Chiba',
         'Chiba': 'JP-Chiba',
