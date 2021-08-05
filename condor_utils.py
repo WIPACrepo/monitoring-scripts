@@ -670,6 +670,10 @@ def add_classads(data):
     # Add gpuhrs and cpuhrs
     data['gpuhrs'] = data.get('Requestgpus', 0.) * data['walltimehrs']
     data['cpuhrs'] = data.get('RequestCpus', 0.) * data['walltimehrs']
+    
+    # Add actual CPU usage
+    if data['walltimehrs'] > 0:
+        data['cpu_efficiency'] = data.Get('RemoteSysCpu', 0.) + data.Get('RemoteUserCpu', 0.) / (data.get('RequestCpus', 1.) * data['walltimehrs']*3600.)        
 
     # add normalized gpu hours
     normalize_gpu(data)
