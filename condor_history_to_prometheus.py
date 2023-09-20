@@ -49,6 +49,9 @@ if __name__ == '__main__':
                     help='read history from')
     parser.add_option('-f','--histfile',
                     help='history file to read from')
+    parser.add_option('-p','--port', default=9100,
+                    action='store', type='int',
+                    help='port number for prometheus exporter')
     (options, args) = parser.parse_args()
     if not args:
         parser.error('no condor history files or collectors')
@@ -67,7 +70,7 @@ if __name__ == '__main__':
 
     metrics = JobMetrics()
 
-    start_http_server(9100)
+    start_http_server(options.port)
     
     while True:
         for ad in generate_ads(ads):
