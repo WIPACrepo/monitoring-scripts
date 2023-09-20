@@ -19,12 +19,14 @@ def compose_ad_metrics(ad, metrics):
     owner = ad['Owner']
     site = ad['MATCH_EXP_JOBGLIDEIN_ResourceName']
 
-    walltimehrs = ad['cpuhrs']
-
     if ad['Requestgpus'] > 0:
         kind = 'GPU'
         device_name = ad['MachineAttrGPUs_DeviceName0']
         walltimehrs = ad['gpuhrs']
+
+    #ignore this ad if walltimehrs is negative
+    if walltimehrs < 0:
+        return
     
     labels = [owner,site,kind,device_name]
 
@@ -52,6 +54,9 @@ if __name__ == '__main__':
     parser.add_option('-p','--port', default=9100,
                     action='store', type='int',
                     help='port number for prometheus exporter')
+    parser.add_option('-i','--interval', default=300,
+                    action='store', type='int',
+                    help='collector query interval in seconds')
     (options, args) = parser.parse_args()
     if not args:
         parser.error('no condor history files or collectors')
