@@ -81,6 +81,6 @@ if __name__ == '__main__':
     while True:
         for ad in generate_ads(ads):
             compose_ad_metrics(ad, metrics)
-        time.sleep(options['interval'])
+        time.sleep(options.interval)
 
         
