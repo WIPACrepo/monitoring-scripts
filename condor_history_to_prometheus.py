@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os, sys
 import glob
 from optparse import OptionParser
@@ -5,7 +6,6 @@ import logging
 import htcondor, classad
 from condor_utils import *
 from condor_job_metrics import JobMetrics
-from collections import defaultdict
 from prometheus_client import start_http_server
 
 def generate_ads(entries):
@@ -32,7 +32,7 @@ def compose_ad_metrics(ad, metrics):
     metrics.condor_job_count.inc().labels(*labels)
     metrics.condor_total_mem_req.inc(ad['RequestMemory']).labels(*labels)
 
-    if ad['ExitCode'] is 0 or ['adExitBySignal'] is False or ['adJobStatus'] is 4:
+    if ad['ExitCode'] == 0 or ['adExitBySignal'] is False or ['adJobStatus'] == 4:
         metrics.condor_bad_job_hours.inc(walltimehrs).labels(*labels)
         metrics.condor_bad_mem_req.inc(ad['RequestMemory']).labels(*labels)
     else:
