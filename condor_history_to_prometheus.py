@@ -28,16 +28,16 @@ def compose_ad_metrics(ad, metrics):
     
     labels = [owner,site,kind,device_name]
 
-    metrics.condor_total_job_hours.inc(walltimehrs).labels(*labels)
-    metrics.condor_job_count.inc().labels(*labels)
-    metrics.condor_total_mem_req.inc(ad['RequestMemory']).labels(*labels)
+    metrics.condor_total_job_hours.labels(*labels).inc(walltimehrs)
+    metrics.condor_job_count.labels(*labels).inc()
+    metrics.condor_total_mem_req.labels(*labels)inc(ad['RequestMemory'])
 
     if ad['ExitCode'] == 0 or ['adExitBySignal'] is False or ['adJobStatus'] == 4:
-        metrics.condor_bad_job_hours.inc(walltimehrs).labels(*labels)
-        metrics.condor_bad_mem_req.inc(ad['RequestMemory']).labels(*labels)
+        metrics.condor_bad_job_hours.labels(*labels).inc(walltimehrs)
+        metrics.condor_bad_mem_req.labels(*labels).inc(ad['RequestMemory'])
     else:
-        metrics.condor_good_job_hours.inc(walltimehrs).labels(*labels)
-        metrics.condor_good_mem_req.inc(ad['RequestMemory']).labels(*labels)
+        metrics.condor_good_job_hours.labels(*labels).inc(walltimehrs)
+        metrics.condor_good_mem_req.labels(*labels).inc(ad['RequestMemory'])
 
 if __name__ == '__main__':
 
