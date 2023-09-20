@@ -30,7 +30,7 @@ def compose_ad_metrics(ad, metrics):
 
     metrics.condor_total_job_hours.labels(*labels).inc(walltimehrs)
     metrics.condor_job_count.labels(*labels).inc()
-    metrics.condor_total_mem_req.labels(*labels)inc(ad['RequestMemory'])
+    metrics.condor_total_mem_req.labels(*labels).inc(ad['RequestMemory'])
 
     if ad['ExitCode'] == 0 or ['adExitBySignal'] is False or ['adJobStatus'] == 4:
         metrics.condor_bad_job_hours.labels(*labels).inc(walltimehrs)
