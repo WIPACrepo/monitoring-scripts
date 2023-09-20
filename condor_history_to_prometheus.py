@@ -18,6 +18,7 @@ def compose_ad_metrics(ad, metrics):
     device_name = ''
     owner = ad['Owner']
     site = ad['MATCH_EXP_JOBGLIDEIN_ResourceName']
+    walltimehrs = ad['cpuhrs']
 
     if ad['Requestgpus'] > 0:
         kind = 'GPU'
