@@ -4,8 +4,8 @@ import glob
 from optparse import OptionParser
 import logging
 import htcondor, classad
-from condor_utils import *
-from condor_job_metrics import JobMetrics
+from .condor_utils import *
+from .condor_job_metrics import JobMetrics
 import prometheus_client
 import time
 

@@ -6,7 +6,7 @@ RUN dnf -y install epel-release && \
     rpm -i http://dist.eugridpma.info/distribution/igtf/1.117/accredited/RPMS/ca_InCommon-IGTF-Server-CA-1.117-1.noarch.rpm && \
     dnf install -y python3-pip && \
     ln -s /usr/bin/python3 /usr/bin/python && \
-    pip3 install 'elasticsearch>=6.0.0,<7.0.0' 'elasticsearch-dsl>=6.0.0,<7.0.0' htcondor requests
+    pip3 install 'elasticsearch>=6.0.0,<7.0.0' 'elasticsearch-dsl>=6.0.0,<7.0.0' htcondor requests prometheus_client
 
 COPY . /monitoring
 
