@@ -6,7 +6,8 @@ import logging
 import htcondor, classad
 from condor_utils import *
 from condor_job_metrics import JobMetrics
-from prometheus_client import start_http_server
+import prometheus_client
+import time
 
 def generate_ads(entries):
     for data in entries:
@@ -76,7 +77,11 @@ if __name__ == '__main__':
 
     metrics = JobMetrics()
 
-    start_http_server(options.port)
+    prometheus_client.REGISTRY.unregister(prometheus_client.GC_COLLECTOR)
+    prometheus_client.REGISTRY.unregister(prometheus_client.PLATFORM_COLLECTOR)
+    prometheus_client.REGISTRY.unregister(prometheus_client.PROCESS_COLLECTOR)
+
+    prometheus_client.start_http_server(options.port)
     
     while True:
         for ad in generate_ads(ads):
