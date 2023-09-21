@@ -82,9 +82,27 @@ if __name__ == '__main__':
     prometheus_client.REGISTRY.unregister(prometheus_client.PROCESS_COLLECTOR)
 
     prometheus_client.start_http_server(options.port)
+
+    last_job = {'ClusterId': None, 'EnteredCurrentStatus': None}
     
     while True:
+        if options.histfile:
+            for path in args:
+                for filename in glob.iglob(path):
+                    ads = read_from_file(options.histfile)
+
+        if options.daemon:
+            try:
+                ads = read_from_collector(args, history=True, since=last_job['ClusterId'])
+            except htcondor.HTCondorIOError as e:
+                failed = e
+                logging.error(f'Condor error: {e}')
+        
         for ad in generate_ads(ads):
+            if last_job['ClusterId'] is not None:
+                if ad['EnteredCurrentStatus'] > last_job['EnteredCurrentStatus']:
+                    last_job['ClusterId'] = ad['ClusterId']
+                    last_job['EnteredCurrentStatus'] = ad['EnteredCurrentStatus']
             compose_ad_metrics(ad, metrics)
         time.sleep(options.interval)
 

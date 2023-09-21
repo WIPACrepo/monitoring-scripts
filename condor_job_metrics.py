@@ -1,12 +1,13 @@
 from prometheus_client import Counter
-approved_groupings = [
-    'User',
-    'Site'
-]
+
 class JobMetrics():
     """
     Wrapper class for holding prometheus job metrics
     """
+    approved_groupings = [
+        'User',
+        'Site'
+    ]
     def __init__(self):
   
         labels = ['Owner','Site','Kind','GPUDeviceName']
