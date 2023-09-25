@@ -15,6 +15,12 @@ def generate_ads(entries):
         yield data
 
 def compose_ad_metrics(ad, metrics):
+    ''' Parse condor job classad and update metrics
+
+        Args:
+            ad (classad): an HTCondor job classad
+            metrics (JobMetrics): JobMetrics object 
+    '''
     kind = 'CPU'
     device_name = ''
     owner = ad['Owner']
@@ -26,7 +32,7 @@ def compose_ad_metrics(ad, metrics):
         device_name = ad['MachineAttrGPUs_DeviceName0']
         walltimehrs = ad['gpuhrs']
 
-    #ignore this ad if walltimehrs is negative
+    # ignore this ad if walltimehrs is negative
     if walltimehrs < 0:
         return
     
@@ -44,7 +50,6 @@ def compose_ad_metrics(ad, metrics):
         metrics.condor_good_mem_req.labels(*labels).inc(ad['RequestMemory'])
 
 if __name__ == '__main__':
-
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s : %(message)s')
 
     parser = OptionParser('usage: %prog [options] history_files')
