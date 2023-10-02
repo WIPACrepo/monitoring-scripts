@@ -6,8 +6,13 @@ import logging
 import htcondor, classad
 from condor_utils import *
 from condor_job_metrics import JobMetrics
-import prometheus_client
+import datetime
 import time
+import prometheus_client
+from datetime import datetime
+import re
+
+utc_format = '%Y-%m-%dT%H:%M:%S'
 
 def generate_ads(entries):
     for data in entries:
@@ -21,40 +26,87 @@ def compose_ad_metrics(ad, metrics):
             ad (classad): an HTCondor job classad
             metrics (JobMetrics): JobMetrics object 
     '''
-    kind = 'CPU'
-    device_name = ''
     owner = ad['Owner']
     site = ad['MATCH_EXP_JOBGLIDEIN_ResourceName']
-    walltimehrs = ad['cpuhrs']
+    schedd = ad['GlobalJobId'][0:ad['GlobalJobId'].find('#')]
+    walltimehrs = ad['walltimehrs']
+    device_name = ''
+    cpuhrs= ad['cpuhrs']
 
     if ad['Requestgpus'] > 0:
-        kind = 'GPU'
         device_name = ad['MachineAttrGPUs_DeviceName0']
-        walltimehrs = ad['gpuhrs']
+        gpuhrs = ad['gpuhrs']
 
     # ignore this ad if walltimehrs is negative
     if walltimehrs < 0:
         return
     
-    labels = [owner,site,kind,device_name]
+    cpu_labels = [owner,site,schedd,device_name,'CPU']
+    gpu_labels = [owner,site,schedd,device_name,'GPU']
 
-    metrics.condor_total_job_hours.labels(*labels).inc(walltimehrs)
-    metrics.condor_job_count.labels(*labels).inc()
-    metrics.condor_total_mem_req.labels(*labels).inc(ad['RequestMemory'])
+    # CPU job totals
+    metrics.condor_job_walltime_hours.labels(*cpu_labels).inc(walltimehrs)
+    metrics.condor_job_resource_hours.labels(*cpu_labels).inc(cpuhrs)
+    metrics.condor_job_total_mem_req.labels(*cpu_labels).inc(ad['RequestMemory'])
 
-    if ad['ExitCode'] == 0 or ['adExitBySignal'] is False or ['adJobStatus'] == 4:
-        metrics.condor_bad_job_hours.labels(*labels).inc(walltimehrs)
-        metrics.condor_bad_mem_req.labels(*labels).inc(ad['RequestMemory'])
+    # GPU job totals
+    if ad['Requestgpus'] > 0:
+        metrics.condor_job_walltime_hours.labels(*gpu_labels).inc(walltimehrs)
+        metrics.condor_job_resource_hours.labels(*gpu_labels).inc(gpuhrs)
+        metrics.condor_job_total_mem_req.labels(*gpu_labels).inc(ad['RequestMemory'])
+
+    # Good jobs
+    if ad['ExitCode'] == 0 and ad['ExitBySignal'] is False and ad['JobStatus'] == 4:
+        metrics.condor_job_good_count.labels(*cpu_labels).inc()
+        metrics.condor_job_good_resource_hours.labels(*cpu_labels).inc(cpuhrs)
+        metrics.condor_job_good_mem_req.labels(*cpu_labels).inc(ad['RequestMemory'])
+
+        if  ad['Requestgpus'] > 0:
+            metrics.condor_job_good_count.labels(*gpu_labels).inc()
+            metrics.condor_job_good_resource_hours.labels(*gpu_labels).inc(gpuhrs)
+            metrics.condor_job_good_mem_req.labels(*gpu_labels).inc(ad['RequestMemory'])
+    # Bad jobs
     else:
-        metrics.condor_good_job_hours.labels(*labels).inc(walltimehrs)
-        metrics.condor_good_mem_req.labels(*labels).inc(ad['RequestMemory'])
+        metrics.condor_job_bad_count.labels(*cpu_labels).inc()
+        metrics.condor_job_bad_resource_hours.labels(*cpu_labels).inc(cpuhrs)
+        metrics.condor_job_bad_mem_req.labels(*cpu_labels).inc(ad['RequestMemory'])
+
+        if  ad['Requestgpus'] > 0:
+            metrics.condor_job_bad_count.labels(*gpu_labels).inc()
+            metrics.condor_job_bad_resource_hours.labels(*gpu_labels).inc(gpuhrs)
+            metrics.condor_job_bad_mem_req.labels(*gpu_labels).inc(ad['RequestMemory'])
+
+def query_collectors(collectors, metrics, options):
+    if options.histfile:
+        for path in collectors:
+            for filename in glob.iglob(path):
+                ads = read_from_file(options.histfile)
+
+    if options.collectors:
+        for collector in collectors:
+            try:
+                ads = read_from_collector(collector, history=True, since=last_job['ClusterId'])
+            except htcondor.HTCondorIOError as e:
+                failed = e
+                logging.error(f'Condor error: {e}')
+
+            for ad in generate_ads(ads):
+                if last_job['ClusterId'] is None:
+                    last_job['ClusterId'] = int(ad['ClusterId'])
+                    last_job['EnteredCurrentStatus'] = ad['EnteredCurrentStatus']
+
+                if datetime.strptime(ad['EnteredCurrentStatus'],utc_format) > datetime.strptime(last_job['EnteredCurrentStatus'],utc_format):
+                    last_job['ClusterId'] = int(ad['ClusterId'])
+                    last_job['EnteredCurrentStatus'] = ad['EnteredCurrentStatus']
+
+                compose_ad_metrics(ad, metrics)
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s : %(message)s')
 
     parser = OptionParser('usage: %prog [options] history_files')
 
-    parser.add_option('-d','--daemon',default=False, action='store_true',
+    parser.add_option('-c','--collectors',default=False, action='store_true',
                     help='read history from')
     parser.add_option('-f','--histfile',
                     help='history file to read from')
@@ -68,18 +120,6 @@ if __name__ == '__main__':
     if not args:
         parser.error('no condor history files or collectors')
 
-    if options.histfile:
-        for path in args:
-            for filename in glob.iglob(path):
-                ads = read_from_file(options.histfile)
-
-    if options.daemon:
-        try:
-            ads = read_from_collector(args, history=True)
-        except htcondor.HTCondorIOError as e:
-            failed = e
-            logging.error(f'Condor error: {e}')
-
     metrics = JobMetrics()
 
     prometheus_client.REGISTRY.unregister(prometheus_client.GC_COLLECTOR)
@@ -91,24 +131,5 @@ if __name__ == '__main__':
     last_job = {'ClusterId': None, 'EnteredCurrentStatus': None}
     
     while True:
-        if options.histfile:
-            for path in args:
-                for filename in glob.iglob(path):
-                    ads = read_from_file(options.histfile)
-
-        if options.daemon:
-            try:
-                ads = read_from_collector(args, history=True, since=last_job['ClusterId'])
-            except htcondor.HTCondorIOError as e:
-                failed = e
-                logging.error(f'Condor error: {e}')
-        
-        for ad in generate_ads(ads):
-            if last_job['ClusterId'] is not None:
-                if ad['EnteredCurrentStatus'] > last_job['EnteredCurrentStatus']:
-                    last_job['ClusterId'] = ad['ClusterId']
-                    last_job['EnteredCurrentStatus'] = ad['EnteredCurrentStatus']
-            compose_ad_metrics(ad, metrics)
+        query_collectors(args, metrics, options)
         time.sleep(options.interval)
-
-        
