@@ -26,55 +26,42 @@ def compose_ad_metrics(ad, metrics):
             ad (classad): an HTCondor job classad
             metrics (JobMetrics): JobMetrics object 
     '''
-    owner = ad['Owner']
-    site = ad['MATCH_EXP_JOBGLIDEIN_ResourceName']
-    schedd = ad['GlobalJobId'][0:ad['GlobalJobId'].find('#')]
-    walltimehrs = ad['walltimehrs']
-    device_name = ''
-    cpuhrs= ad['cpuhrs']
+    labels = {'owner': None,
+              'site': None,
+              'schedd': None,
+              'GPUDeviceName': None,
+              'usage': None,
+              'kind': None}
 
-    if ad['Requestgpus'] > 0:
-        device_name = ad['MachineAttrGPUs_DeviceName0']
-        gpuhrs = ad['gpuhrs']
+    labels['owner'] = ad['Owner']
+    labels['site'] = ad['MATCH_EXP_JOBGLIDEIN_ResourceName']
+    labels['schedd'] = ad['GlobalJobId'][0:ad['GlobalJobId'].find('#')]
+    labels['device_name'] = None
 
     # ignore this ad if walltimehrs is negative
-    if walltimehrs < 0:
+    if ad['walltimehrs'] < 0:
         return
     
-    cpu_labels = [owner,site,schedd,device_name,'CPU']
-    gpu_labels = [owner,site,schedd,device_name,'GPU']
-
-    # CPU job totals
-    metrics.condor_job_walltime_hours.labels(*cpu_labels).inc(walltimehrs)
-    metrics.condor_job_resource_hours.labels(*cpu_labels).inc(cpuhrs)
-    metrics.condor_job_total_mem_req.labels(*cpu_labels).inc(ad['RequestMemory'])
-
-    # GPU job totals
-    if ad['Requestgpus'] > 0:
-        metrics.condor_job_walltime_hours.labels(*gpu_labels).inc(walltimehrs)
-        metrics.condor_job_resource_hours.labels(*gpu_labels).inc(gpuhrs)
-        metrics.condor_job_total_mem_req.labels(*gpu_labels).inc(ad['RequestMemory'])
-
-    # Good jobs
+    metrics.condor_job_walltime_hours.labels(**labels).inc(ad['walltimehrs'])
+    
     if ad['ExitCode'] == 0 and ad['ExitBySignal'] is False and ad['JobStatus'] == 4:
-        metrics.condor_job_good_count.labels(*cpu_labels).inc()
-        metrics.condor_job_good_resource_hours.labels(*cpu_labels).inc(cpuhrs)
-        metrics.condor_job_good_mem_req.labels(*cpu_labels).inc(ad['RequestMemory'])
-
-        if  ad['Requestgpus'] > 0:
-            metrics.condor_job_good_count.labels(*gpu_labels).inc()
-            metrics.condor_job_good_resource_hours.labels(*gpu_labels).inc(gpuhrs)
-            metrics.condor_job_good_mem_req.labels(*gpu_labels).inc(ad['RequestMemory'])
-    # Bad jobs
+        labels['usage'] = 'goodput'
     else:
-        metrics.condor_job_bad_count.labels(*cpu_labels).inc()
-        metrics.condor_job_bad_resource_hours.labels(*cpu_labels).inc(cpuhrs)
-        metrics.condor_job_bad_mem_req.labels(*cpu_labels).inc(ad['RequestMemory'])
+        labels['usage'] = 'badput'
 
-        if  ad['Requestgpus'] > 0:
-            metrics.condor_job_bad_count.labels(*gpu_labels).inc()
-            metrics.condor_job_bad_resource_hours.labels(*gpu_labels).inc(gpuhrs)
-            metrics.condor_job_bad_mem_req.labels(*gpu_labels).inc(ad['RequestMemory'])
+    if ad['Requestgpus'] > 0:
+        labels['GPUDeviceName'] = ad['MachineAttrGPUs_DeviceName0']
+        resource_hrs = ad['gpuhrs']
+        resource_request = ad['Requestgpus']
+    else:
+        resource_hrs = ad['cpuhrs']
+        resource_request = ad['RequestCpus']
+
+    metrics.condor_job_count.labels(**labels).inc()
+    metrics.condor_job_resource_hours.labels(**labels).inc(resource_hrs)
+    metrics.condor_job_resource_req.labels(**labels).obeserve(resource_request)
+    metrics.condor_job_mem_req.labels(**labels).observe(ad['RequestMemory']/1048576)
+    metrics.condor_job_mem_used.labels(**labels).observe(ad['ResidentSetSize_RAW']/1048576)
 
 def query_collectors(collectors, metrics, options):
     if options.histfile:
