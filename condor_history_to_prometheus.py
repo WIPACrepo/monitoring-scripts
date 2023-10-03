@@ -36,7 +36,7 @@ def compose_ad_metrics(ad, metrics):
     labels['owner'] = ad['Owner']
     labels['site'] = ad['MATCH_EXP_JOBGLIDEIN_ResourceName']
     labels['schedd'] = ad['GlobalJobId'][0:ad['GlobalJobId'].find('#')]
-    labels['device_name'] = None
+    labels['GPUDeviceName'] = None
 
     # ignore this ad if walltimehrs is negative
     if ad['walltimehrs'] < 0:
@@ -50,16 +50,18 @@ def compose_ad_metrics(ad, metrics):
         labels['usage'] = 'badput'
 
     if ad['Requestgpus'] > 0:
+        labels['kind'] = 'GPU'
         labels['GPUDeviceName'] = ad['MachineAttrGPUs_DeviceName0']
         resource_hrs = ad['gpuhrs']
         resource_request = ad['Requestgpus']
     else:
+        labels['kind'] = 'CPU'
         resource_hrs = ad['cpuhrs']
         resource_request = ad['RequestCpus']
 
     metrics.condor_job_count.labels(**labels).inc()
     metrics.condor_job_resource_hours.labels(**labels).inc(resource_hrs)
-    metrics.condor_job_resource_req.labels(**labels).obeserve(resource_request)
+    metrics.condor_job_resource_req.labels(**labels).observe(resource_request)
     metrics.condor_job_mem_req.labels(**labels).observe(ad['RequestMemory']/1048576)
     metrics.condor_job_mem_used.labels(**labels).observe(ad['ResidentSetSize_RAW']/1048576)
 
