@@ -62,7 +62,7 @@ def compose_ad_metrics(ad, metrics):
     metrics.condor_job_count.labels(**labels).inc()
     metrics.condor_job_resource_hours.labels(**labels).inc(resource_hrs)
     metrics.condor_job_resource_req.labels(**labels).observe(resource_request)
-    metrics.condor_job_mem_req.labels(**labels).observe(ad['RequestMemory']/1048576)
+    metrics.condor_job_mem_req.labels(**labels).observe(ad['RequestMemory']/1024)
     metrics.condor_job_mem_used.labels(**labels).observe(ad['ResidentSetSize_RAW']/1048576)
 
 def query_collectors(collectors, metrics, options):
