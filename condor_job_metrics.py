@@ -9,8 +9,8 @@ class JobMetrics():
   
         labels = ['owner','site','schedd','GPUDeviceName','usage','kind']
         
-        memory_buckets = (1, 2, 3, 4, 6, 8, 12, 20, 30, 50, 100, float('inf'))
-        resource_buckets = (1, 2, 3, 4, 6, 8, 12, 16, 32, float('inf'))
+        memory_buckets = (1, 2, 3, 4, 6, 8, 12, 20, 40,float('inf'))
+        resource_buckets = (1, 2, 3, 4, 8, 16, float('inf'))
 
         self.condor_job_walltime_hours = Counter(f'condor_job_walltime_hours',
                                                     'Total job hours',

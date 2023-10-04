@@ -26,6 +26,10 @@ def compose_ad_metrics(ad, metrics):
             ad (classad): an HTCondor job classad
             metrics (JobMetrics): JobMetrics object 
     '''
+    # ignore this ad if walltimehrs is negative or a dagman
+    if ad['walltimehrs'] < 0 or ad['Cmd'] == '/usr/bin/condor_dagman':
+        return
+
     labels = {'owner': None,
               'site': None,
               'schedd': None,
@@ -37,10 +41,6 @@ def compose_ad_metrics(ad, metrics):
     labels['site'] = ad['MATCH_EXP_JOBGLIDEIN_ResourceName']
     labels['schedd'] = ad['GlobalJobId'][0:ad['GlobalJobId'].find('#')]
     labels['GPUDeviceName'] = None
-
-    # ignore this ad if walltimehrs is negative
-    if ad['walltimehrs'] < 0:
-        return
     
     metrics.condor_job_walltime_hours.labels(**labels).inc(ad['walltimehrs'])
     
@@ -48,6 +48,9 @@ def compose_ad_metrics(ad, metrics):
         labels['usage'] = 'goodput'
     else:
         labels['usage'] = 'badput'
+
+    resource_hrs = 0
+    resource_request = 0
 
     if ad['Requestgpus'] > 0:
         labels['kind'] = 'GPU'
