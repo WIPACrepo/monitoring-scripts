@@ -752,7 +752,7 @@ def read_from_file(filename):
             else:
                 entry += line+'\n'
 
-def read_from_collector(address, history=False, constraint='true', projection=[],match=10000,since=None):
+def read_from_collector(address, history=False, constraint='true', projection=[],match=10000):
     """Connect to condor collectors and schedds to pull job ads directly.
 
     A generator that yields condor job dicts.

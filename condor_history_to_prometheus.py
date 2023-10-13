@@ -17,13 +17,27 @@ def generate_ads(entries):
         add_classads(data)
         yield data
 
-def last_jobs_dict(schedds):
-    last_jobs = defaultdict(dict)
+def last_jobs_dict(collector):
+    last_job = defaultdict(dict)
+    
+    for collector in args:
+        schedd_ads = locate_schedds(collector)
+        if schedd_ads is None:
+            return None
+    
+        for s in schedd_ads:
+            last_job[s.get('Name')] = {'ClusterId': None, 'EnteredCurrentStatus': None}
 
-    for schedd in schedds:
-        last_jobs[schedd] = {'ClusterId': None, 'EnteredCurrentStatus': None}
+    return last_job
+    
 
-    return last_jobs
+def locate_schedds(collector):
+    try:
+        coll = htcondor.Collector(collector)
+        return coll.locateAll(htcondor.DaemonTypes.Schedd)
+    except htcondor.HTCondorIOError as e:
+        failed = e
+        logging.error(f'Condor error: {e}')
 
 def compose_ad_metrics(ad, metrics):
     ''' Parse condor job classad and update metrics
@@ -44,7 +58,7 @@ def compose_ad_metrics(ad, metrics):
               'kind': None}
 
     labels['owner'] = ad['Owner']
-    labels['site'] = ad['MATCH_EXP_JOBGLIDEIN_ResourceName']
+    labels['site'] = ad['site']
     labels['schedd'] = ad['GlobalJobId'][0:ad['GlobalJobId'].find('#')]
     labels['GPUDeviceName'] = None
     
@@ -72,21 +86,6 @@ def compose_ad_metrics(ad, metrics):
     metrics.condor_job_resource_req.labels(**labels).observe(resource_request)
     metrics.condor_job_mem_req.labels(**labels).observe(ad['RequestMemory']/1024)
     metrics.condor_job_mem_used.labels(**labels).observe(ad['ResidentSetSize_RAW']/1048576)
-
-def locate_schedds(collector):
-    """Query collector for schedd location ads
-
-    A list of schedd location ClassAds
-
-    Args:
-        collector (str): address for collector to query
-    """
-    try:
-        coll = htcondor.Collector(collector)
-        return coll.locateAll(htcondor.DaemonTypes.Schedd)
-    except htcondor.HTCondorIOError as e:
-        failed = e
-        logging.error(f'Condor error: {e}')
 
 def query_collector(collector, metrics, last_job):
     """Query schedds for job ads
@@ -175,14 +174,19 @@ if __name__ == '__main__':
     prometheus_client.start_http_server(options.port)
 
     if options.collectors:
-        last_job = defaultdict(dict)
-        
-        for collector in args:
-            schedd_ads = locate_schedds(collector)
-            for s in schedd_ads:
-                last_job[s.get('Name')] = {'ClusterId': None, 'EnteredCurrentStatus': None}
+        last_job = last_jobs_dict(args)
+
+        if last_job is None:
+            logging.error(f'No schedds found')
+            exit()
 
         while True:
+            start = datetime.now()
             for collector in args:
                 query_collector(collector, metrics, last_job)
-            time.sleep(options.interval)
+
+            delta = datetime.now() - start
+            # sleep for interval minus scrape duration
+            # if scrape duration was longer than interval, run right away
+            if delta.seconds < options.interval:
+                time.sleep(options.interval - delta.seconds)
