@@ -772,7 +772,7 @@ def read_from_collector(address, history=False, constraint='true', projection=[]
             if history:
                 start_dt = datetime.now()-timedelta(minutes=10)
                 start_stamp = time.mktime(start_dt.timetuple())
-                gen = schedd.history('(EnteredCurrentStatus >= {0}) && ({1})'.format(start_stamp,constraint),projection,match=match,since=since)
+                gen = schedd.history('(EnteredCurrentStatus >= {0}) && ({1})'.format(start_stamp,constraint),projection,match=match)
             else:
                 gen = schedd.query(constraint, projection)
             for i,entry in enumerate(gen):
