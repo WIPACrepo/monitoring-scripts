@@ -629,11 +629,12 @@ def filter_keys(data):
                 logging.info('bad bool [%s]: %r', k, data[k], exc_info=True)
                 data[k] = good_keys[k]
         elif isinstance(good_keys[k],(float,int)):
-            try:
-                data[k] = float(data[k])
-            except:
-                logging.info('bad float/int [%s]: %r', k, data[k], exc_info=True)
-                data[k] = good_keys[k]
+            if data[k] != classad.Value.Undefined:
+                try:
+                    data[k] = float(data[k])
+                except:
+                    logging.info('bad float/int [%s]: %r', k, data[k], exc_info=True)
+                    data[k] = good_keys[k]
         elif isinstance(good_keys[k],datetime):
             if isinstance(data[k], datetime):
                 data[k] = data[k].isoformat()
@@ -751,7 +752,7 @@ def read_from_file(filename):
             else:
                 entry += line+'\n'
 
-def read_from_collector(address, history=False, constraint='true', projection=[]):
+def read_from_collector(address, history=False, constraint='true', projection=[],match=10000):
     """Connect to condor collectors and schedds to pull job ads directly.
 
     A generator that yields condor job dicts.
@@ -771,7 +772,7 @@ def read_from_collector(address, history=False, constraint='true', projection=[]
             if history:
                 start_dt = datetime.now()-timedelta(minutes=10)
                 start_stamp = time.mktime(start_dt.timetuple())
-                gen = schedd.history('(EnteredCurrentStatus >= {0}) && ({1})'.format(start_stamp,constraint),projection,10000)
+                gen = schedd.history('(EnteredCurrentStatus >= {0}) && ({1})'.format(start_stamp,constraint),projection,match=match)
             else:
                 gen = schedd.query(constraint, projection)
             for i,entry in enumerate(gen):
