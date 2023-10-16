@@ -181,12 +181,12 @@ if __name__ == '__main__':
             exit()
 
         while True:
-            start = datetime.now()
+            start = time.time()
             for collector in args:
                 query_collector(collector, metrics, last_job)
 
-            delta = datetime.now() - start
+            delta = time.time() - start
             # sleep for interval minus scrape duration
             # if scrape duration was longer than interval, run right away
-            if delta.seconds < options.interval:
-                time.sleep(options.interval - delta.seconds)
+            if delta < options.interval:
+                time.sleep(options.interval - delta)
