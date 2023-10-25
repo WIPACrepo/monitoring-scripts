@@ -292,6 +292,8 @@ site_names = {
     'UKI-NORTHGRID-MAN-HEP': 'UK-Manchester',
     'UKI-LT2-QMUL': 'UK-Manchester',
     'Bartol': 'US-Bartol',
+    'Anvil': 'US-XSEDE-Anvil',
+    'Delta': 'US-XSEDE-Delta',
     'Bridges': 'US-XSEDE-PSC',
     'Bridges-2': 'US-XSEDE-PSC',
     'JetStream': 'US-XSEDE-JetStream',
