@@ -1,12 +1,12 @@
 FROM almalinux:8
 
 RUN dnf -y install epel-release && \
-    dnf -y upgrade ca-certificates --disablerepo=epel && \
-    rpm -i http://dist.eugridpma.info/distribution/igtf/1.125/accredited/RPMS/ca_COMODO-RSA-CA-1.125-1.noarch.rpm && \
-    rpm -i http://dist.eugridpma.info/distribution/igtf/1.125/accredited/RPMS/ca_InCommon-IGTF-Server-CA-1.125-1.noarch.rpm && \
-    dnf install -y python3-pip && \
-    ln -s /usr/bin/python3 /usr/bin/python && \
-    pip3 install 'elasticsearch>=6.0.0,<7.0.0' 'elasticsearch-dsl>=6.0.0,<7.0.0' htcondor requests prometheus_client
+    yum install -y https://repo.opensciencegrid.org/osg/23-main/osg-23-main-el8-release-latest.rpm && \
+    yum install -y osg-ca-certs && \
+    dnf install -y python38 python38-pip && \
+    dnf clean all && yum clean all && \
+    ln -s /usr/bin/python3.8 /usr/bin/python && \
+    pip3.8 install --no-cache-dir 'elasticsearch>=6.0.0,<7.0.0' 'elasticsearch-dsl>=6.0.0,<7.0.0' htcondor requests prometheus_client
 
 COPY . /monitoring
 
