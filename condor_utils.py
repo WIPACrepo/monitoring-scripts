@@ -741,7 +741,7 @@ def read_from_file(filename):
     Args:
         filename (str): filename to read
     """
-    with (gzip.open(filename) if filename.endswith('.gz') else open(filename)) as f:
+    with (gzip.open(filename, 'rt', encoding='utf-8') if filename.endswith('.gz') else open(filename)) as f:
         entry = ''
         for line in f.readlines():
             if line.startswith('***'):
