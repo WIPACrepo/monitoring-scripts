@@ -83,12 +83,11 @@ def compose_ad_metrics(ad, metrics):
         resource_hrs = ad['cpuhrs']
         resource_request = ad['RequestCpus']
 
-    if 'IceProd' in (ad.keys()):
-        try: 
-            labels['IceProdDataset'] = ad['IceProdDataset']
-            labels['IceProdTaskName'] = ad['IceProdTaskName']
-        except:
-            pass
+    try: 
+        labels['IceProdDataset'] = ad['IceProdDataset']
+        labels['IceProdTaskName'] = ad['IceProdTaskName']
+    except:
+        pass
 
     if 'MATCH_EXP_JOBGLIDEIN_ResourceName' in ad['MATCH_EXP_JOBGLIDEIN_ResourceName']:
         labels['MATCH_EXP_JOBGLIDEIN_ResourceName'] = ad['MATCH_EXP_JOBGLIDEIN_ResourceName']
