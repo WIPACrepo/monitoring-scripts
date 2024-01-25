@@ -55,7 +55,10 @@ def compose_ad_metrics(ad, metrics):
               'schedd': None,
               'GPUDeviceName': None,
               'usage': None,
-              'kind': None}
+              'kind': None,
+              'IceProdDataset': None,
+              'IceProdTaskName': None,
+              'MATCH_EXP_JOBGLIDEIN_ResourceName': None}
 
     labels['owner'] = ad['Owner']
     labels['site'] = ad['site']
@@ -79,6 +82,15 @@ def compose_ad_metrics(ad, metrics):
         labels['kind'] = 'CPU'
         resource_hrs = ad['cpuhrs']
         resource_request = ad['RequestCpus']
+
+    try: 
+        labels['IceProdDataset'] = ad['IceProdDataset']
+        labels['IceProdTaskName'] = ad['IceProdTaskName']
+    except:
+        pass
+
+    if 'MATCH_EXP_JOBGLIDEIN_ResourceName' in ad['MATCH_EXP_JOBGLIDEIN_ResourceName']:
+        labels['MATCH_EXP_JOBGLIDEIN_ResourceName'] = ad['MATCH_EXP_JOBGLIDEIN_ResourceName']
 
     metrics.condor_job_count.labels(**labels).inc()
     metrics.condor_job_walltime_hours.labels(**labels).inc(ad['walltimehrs'])

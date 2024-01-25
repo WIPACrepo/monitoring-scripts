@@ -7,7 +7,7 @@ class JobMetrics():
  
     def __init__(self):
   
-        labels = ['owner','site','schedd','GPUDeviceName','usage','kind']
+        labels = ['owner','site','schedd','GPUDeviceName','usage','kind','IceProdDataset','IceProdTaskName','MATCH_EXP_JOBGLIDEIN_ResourceName']
         
         memory_buckets = (1, 2, 3, 4, 6, 8, 12, 20, 40,float('inf'))
         resource_buckets = (1, 2, 3, 4, 8, 16, float('inf'))
