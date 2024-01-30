@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-
 import os
 import glob
 from optparse import OptionParser
@@ -11,15 +10,16 @@ from condor_utils import *
 import prometheus_client
 from condor_metrics import *
 from itertools import chain
-
+from datetime import datetime
+from dateutil import parser as dateparser
 def get_job_state(ad):
     jobstatus = None
 
-    if ad["LastJobStatus"] == 1:
+    if ad["JobStatus"] == 1:
         jobstatus = 'Idle'
-    elif ad["LastJobStatus"] == 2:
+    elif ad["JobStatus"] == 2:
         jobstatus = 'Running'
-    elif ad["LastJobStatus"] == 5:
+    elif ad["JobStatus"] == 5:
         jobstatus = 'Held'
 
     return jobstatus
@@ -31,6 +31,7 @@ def generate_ads(entries):
 
 def compose_ad_metrics(ads):
     for ad in ads:
+        walltime = int(ad['RequestCpus']) * (datetime.utcnow() - dateparser.parse(ad['JobCurrentStartDate'])).total_seconds()
         labels = {key: None for key in metrics.labels}
 
         labels['schedd'] = ad['GlobalJobId'].split('#')[0]
@@ -54,8 +55,8 @@ def compose_ad_metrics(ads):
         metrics.condor_jobs_disk_usage_bytes.labels(**labels).inc(ad['DiskUsage_RAW']*1024)
         metrics.condor_jobs_memory_request_bytes.labels(**labels).inc(ad['RequestMemory']*1024*1024)
         metrics.condor_jobs_memory_usage_bytes.labels(**labels).inc(ad['ResidentSetSize_RAW']*1024)
-        metrics.condor_jobs_walltime.labels(**labels).inc(ad['walltimehrs']*3600)
-        metrics.condor_jobs_wastetime.labels(**labels).inc((ad['walltimehrs']*3600)-ad['RemoteUserCpu'])
+        metrics.condor_jobs_walltime.labels(**labels).inc(walltime)
+        metrics.condor_jobs_wastetime.labels(**labels).inc(walltime - ad['RemoteUserCpu'])
 
         if 'RequestGpus' in ad:
             metrics.condor_jobs_gpu_request.labels(**labels).inc(ad['RequestGpus'])
@@ -97,6 +98,7 @@ if __name__ == '__main__':
                     failed = e
                     logging.error('Condor error', exc_info=True)
             gen = chain(*gens)
+            metrics.clear()
             compose_ad_metrics(generate_ads(gen))
             delta = time.time() - start
             
