@@ -88,9 +88,8 @@ def compose_ad_metrics(ad, metrics):
         labels['IceProdTaskName'] = ad['IceProdTaskName']
     except:
         pass
-
-    if 'MATCH_EXP_JOBGLIDEIN_ResourceName' in ad['MATCH_EXP_JOBGLIDEIN_ResourceName']:
-        labels['MATCH_EXP_JOBGLIDEIN_ResourceName'] = ad['MATCH_EXP_JOBGLIDEIN_ResourceName']
+    
+    labels['MATCH_EXP_JOBGLIDEIN_ResourceName'] = ad['MATCH_EXP_JOBGLIDEIN_ResourceName']
 
     metrics.condor_job_count.labels(**labels).inc()
     metrics.condor_job_walltime_hours.labels(**labels).inc(ad['walltimehrs'])
