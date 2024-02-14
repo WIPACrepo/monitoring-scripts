@@ -361,6 +361,10 @@ site_names = {
     'WSU - GRID_ce2': 'US-OSG-WSU',
     'WSU-GRID': 'US-OSG-WSU',
     'SDSC-Cloud': 'US-OSG-Cloud',
+    'Lonestar6': 'US-LCC-Lonestar6',
+    'Purdue Anvil': 'US-XSEDE-Anvil',
+    'NCSA Delta': 'US-XSEDE-Delta',
+    'Stampede3': 'US-XSEDE-TACC',
 }
 
 flock_pools = {
