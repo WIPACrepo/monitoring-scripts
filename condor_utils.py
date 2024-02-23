@@ -365,6 +365,9 @@ site_names = {
     'Purdue Anvil': 'US-XSEDE-Anvil',
     'NCSA Delta': 'US-XSEDE-Delta',
     'Stampede3': 'US-XSEDE-TACC',
+    "UofU Kingspeak": "US-Utah",
+    "UofU Lonepeak": "US-Utah",
+    "UofU Notchpeak": "US-Utah":w,
 }
 
 flock_pools = {
