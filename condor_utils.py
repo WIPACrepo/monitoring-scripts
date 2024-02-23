@@ -367,7 +367,7 @@ site_names = {
     'Stampede3': 'US-XSEDE-TACC',
     "UofU Kingspeak": "US-Utah",
     "UofU Lonepeak": "US-Utah",
-    "UofU Notchpeak": "US-Utah":w,
+    "UofU Notchpeak": "US-Utah",
 }
 
 flock_pools = {
