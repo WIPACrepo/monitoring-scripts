@@ -626,7 +626,7 @@ def filter_keys(data):
             del data[k]
 
     for k in list(data.keys()):
-        if not (k in good_keys or ('IceProd' in k)):
+        if not (k in good_keys or ('IceProd' in k and not k.endswith('InstanceId'))):
             del data[k]
     for k in good_keys:
         if k not in data:
