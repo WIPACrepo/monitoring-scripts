@@ -19,9 +19,9 @@ parser.add_argument("-y", "--dry-run", default=False,
                   help="query jobs, but do not ingest into ES",)
 parser.add_argument('--collectors', default=False, action='store_true',
                   help='Args are collector addresses, not files')
-parser.add_argument('--client_id',help='oauth2 client id')
-parser.add_argument('--client_secret',help='oauth2 client secret')
-parser.add_argument('--token_url',help='oauth2 realm token url')
+parser.add_argument('--client_id',help='oauth2 client id',default=None)
+parser.add_argument('--client_secret',help='oauth2 client secret',default=None)
+parser.add_argument('--token_url',help='oauth2 realm token url',default=None)
 parser.add_argument("positionals", nargs='+')
 
 options = parser.parse_args()
@@ -68,11 +68,14 @@ if '://' in address:
 
 url = '{}://{}'.format(prefix, address)
 
-api = ClientCredentialsAuth(address='https://elasticsearch.icecube.aq',
-                            token_url=options.token_url,
-                            client_secret=options.client_secret,
-                            client_id=options.client_id)
-token = api.make_access_token()
+token = None
+
+if None not in (options.token_url, options.client_secret, options.client_id):
+    api = ClientCredentialsAuth(address='https://elasticsearch.icecube.aq',
+                                token_url=options.token_url,
+                                client_secret=options.client_secret,
+                                client_id=options.client_id)
+    token = api.make_access_token()
 
 logging.info('connecting to ES at %s',url)
 es = Elasticsearch(hosts=[url],
