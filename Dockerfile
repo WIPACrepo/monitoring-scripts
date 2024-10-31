@@ -1,12 +1,21 @@
-FROM almalinux:8
+FROM almalinux:8.9
+
+ARG CLIENT_ID
+ARG CLIENT_SECRET
+ARG TOKEN_URL
+
+ENV CLIENT_ID=${CLIENT_ID}
+ENV CLIENT_SECRET=${CLIENT_SECRET}
+ENV TOKEN_URL=${TOKEN_URL}
 
 RUN dnf -y install epel-release && \
-    yum install -y https://repo.opensciencegrid.org/osg/23-main/osg-23-main-el8-release-latest.rpm && \
-    yum install -y osg-ca-certs && \
-    dnf install -y python38 python38-pip && \
+    dnf install -y https://repo.opensciencegrid.org/osg/23-main/osg-23-main-el8-release-latest.rpm && \
+    dnf install -y osg-ca-certs && \
+    dnf install -y python3.11 python3.11-pip wget tar && \
     dnf clean all && yum clean all && \
-    ln -s /usr/bin/python3.8 /usr/bin/python && \
-    pip3.8 install --no-cache-dir 'elasticsearch>=6.0.0,<7.0.0' 'elasticsearch-dsl>=6.0.0,<7.0.0' htcondor requests prometheus_client
+    ln -s /usr/bin/python3.11 /usr/bin/python && \
+    wget https://github.com/WIPACrepo/rest-tools/archive/refs/tags/v1.8.2.tar.gz && \
+    pip3.11 install --no-cache-dir elasticsearch elasticsearch htcondor requests prometheus_client setuptools  ./v1.8.2.tar.gz
 
 COPY . /monitoring
 
