@@ -15,7 +15,7 @@ RUN dnf -y install epel-release && \
     dnf clean all && yum clean all && \
     ln -s /usr/bin/python3.11 /usr/bin/python && \
     wget https://github.com/WIPACrepo/rest-tools/archive/refs/tags/v1.8.2.tar.gz && \
-    pip3.11 install --no-cache-dir elasticsearch elasticsearch htcondor requests prometheus_client setuptools  ./v1.8.2.tar.gz
+    pip3.11 install --no-cache-dir elasticsearch elasticsearch_dsl htcondor requests prometheus_client setuptools  ./v1.8.2.tar.gz
 
 COPY . /monitoring
 
