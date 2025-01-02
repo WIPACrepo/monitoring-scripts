@@ -61,7 +61,7 @@ token = None
 if options.token is not None:
     token = options.token
 elif None not in (options.token_url, options.client_secret, options.client_id):
-    api = ClientCredentialsAuth(address='https://elasticsearch.icecube.aq',
+    api = ClientCredentialsAuth(address='https://elastic.icecube.aq',
                                 token_url=options.token_url,
                                 client_secret=options.client_secret,
                                 client_id=options.client_id)

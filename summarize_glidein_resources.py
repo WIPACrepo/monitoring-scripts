@@ -13,111 +13,14 @@ import re
 import logging
 import time
 from urllib.parse import urlparse, urlunparse
-
-
-def parse_timedelta(time_str):
-    parts = re.match(
-        r"((?P<days>(\d+?\.?\d*))d)?((?P<hours>(\d+?\.?\d*))h)?((?P<minutes>(\d+?\.?\d*))m)?((?P<seconds>(\d+?\.?\d*))s)?",
-        time_str,
-    )
-    if not parts:
-        raise ValueError
-    parts = parts.groupdict()
-    if not any([v is not None for v in list(parts.values())]):
-        raise ValueError
-    time_params = {}
-    for (name, param) in parts.items():
-        if param:
-            time_params[name] = float(param)
-    return datetime.timedelta(**time_params)
-
-
-def get_datetime(value):
-    try:
-        return datetime.datetime.utcnow() - parse_timedelta(value)
-    except ValueError:
-        return dateutil.parser.parse(value)
-
-
-def snap_to_interval(dt, interval):
-    ts = time.mktime(dt.timetuple())
-    ts = ts - (ts % int(interval.total_seconds()))
-    return datetime.datetime.utcfromtimestamp(ts)
-
-
-def parse_index(url_str):
-    url = urlparse(url_str)
-    return {
-        "host": urlunparse(url._replace(path="", params="", query="", fragment="")),
-        "index": url.path[1:],
-    }
-
-
-parser = ArgumentParser(
-    description=__doc__, formatter_class=ArgumentDefaultsHelpFormatter
-)
-parser.add_argument(
-    "--after", default="2d", help="maximum time to look back", type=get_datetime,
-)
-parser.add_argument(
-    "--before", default="0d", help="minimum time to look back", type=get_datetime,
-)
-parser.add_argument(
-    "--interval", default="20m", help="aggregation interval", type=parse_timedelta,
-)
-parser.add_argument(
-    "-y",
-    "--dry-run",
-    default=False,
-    action="store_true",
-    help="query status, but do not ingest into ES",
-)
-parser.add_argument(
-    "-v",
-    "--verbose",
-    default=False,
-    action="store_true",
-    help="use verbose logging in ES",
-)
-parser.add_argument(
-    "-i",
-    "--input-index",
-    type=parse_index,
-    default="http://elk-1.icecube.wisc.edu:9200/condor_status",
-)
-parser.add_argument(
-    "-o",
-    "--output-index",
-    type=parse_index,
-    default="http://elk-1.icecube.wisc.edu:9200/glidein_resources",
-)
-
-options = parser.parse_args()
-
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s : %(message)s"
-)
-if options.verbose:
-    logging.getLogger("elasticsearch").setLevel("DEBUG")
-
-# round time range to nearest interval
-after = snap_to_interval(options.after, options.interval)
-# ...only if last bin is far enough in the past to be complete
-if datetime.datetime.utcnow() - options.before > options.interval:
-    before = snap_to_interval(options.before, options.interval)
-else:
-    before = options.before
-
-if not before > after:
-    parser.error("--before must be > --after")
+from rest_tools.client import ClientCredentialsAuth
 
 # note different capitalization conventions for GPU and Cpu
 RESOURCES = ("GPUs", "Cpus", "Memory", "Disk")
 STATUSES = ("evicted", "removed", "finished", "failed")
 
-# Accumulate offered and claimed resources in time bins, weighting by the
-# fraction of each bin that intersects the glidein lifetime
-summarize_resources = edsl.A(
+def summarize_resources(interval):
+    return edsl.A(
     "scripted_metric",
     init_script="""
         state.interval = (Long)(params.interval);
@@ -179,12 +82,48 @@ summarize_resources = edsl.A(
     params={
         "left": "DaemonStartTime",
         "right": "LastHeardFrom",
-        "interval": int(options.interval.total_seconds() * 1000),
+        "interval": interval,
         "RESOURCES": RESOURCES,
         "STATUSES": STATUSES + ("total",),
     },
 )
 
+def parse_timedelta(time_str):
+    parts = re.match(
+        r"((?P<days>(\d+?\.?\d*))d)?((?P<hours>(\d+?\.?\d*))h)?((?P<minutes>(\d+?\.?\d*))m)?((?P<seconds>(\d+?\.?\d*))s)?",
+        time_str,
+    )
+    if not parts:
+        raise ValueError
+    parts = parts.groupdict()
+    if not any([v is not None for v in list(parts.values())]):
+        raise ValueError
+    time_params = {}
+    for (name, param) in parts.items():
+        if param:
+            time_params[name] = float(param)
+    return datetime.timedelta(**time_params)
+
+
+def get_datetime(value):
+    try:
+        return datetime.datetime.now(datetime.timezone.utc) - parse_timedelta(value)
+    except ValueError:
+        return dateutil.parser.parse(value)
+
+
+def snap_to_interval(dt, interval):
+    ts = time.mktime(dt.timetuple())
+    ts = ts - (ts % int(interval.total_seconds()))
+    return datetime.datetime.fromtimestamp(ts,tz=datetime.timezone.utc)
+
+
+def parse_index(url_str):
+    url = urlparse(url_str)
+    return {
+        "host": urlunparse(url._replace(path="", params="", query="", fragment="")),
+        "index": url.path[1:],
+    }
 
 def scan_aggs(search, source_aggs, inner_aggs={}, size=10):
     """
@@ -211,7 +150,8 @@ def scan_aggs(search, source_aggs, inner_aggs={}, size=10):
         response = run_search(after=after)
 
 
-def resource_summaries(host, index, after, before, interval):
+def resource_summaries(client, index, after, before, interval):
+    parsed_interval = parse_timedelta(interval)
     by_site = [
         {k: edsl.A("terms", field=k + ".keyword")}
         for k in ("site", "country", "institution", "resource")
@@ -229,14 +169,14 @@ def resource_summaries(host, index, after, before, interval):
     by_timestamp = edsl.A(
         "date_histogram",
         field="@timestamp",
-        interval=int(interval.total_seconds() * 1000),
+        fixed_interval=interval,
     )
-    by_timestamp.bucket("resources", summarize_resources)
+    by_timestamp.bucket("resources", summarize_resources(int(parsed_interval.total_seconds() * 1000)))
 
     buckets = scan_aggs(
         (
             edsl.Search()
-            .using(elasticsearch.Elasticsearch(host))
+            .using(client)
             .index(index)
             .filter("range", **{"@timestamp": {"gte": after, "lt": before}})
         ),
@@ -251,7 +191,7 @@ def resource_summaries(host, index, after, before, interval):
             # date_histogram buckets, and the corresponding ticket has been
             # open for years:
             # https://github.com/elastic/elasticsearch/issues/23874
-            timestamp = datetime.datetime.utcfromtimestamp(bucket.key / 1000)
+            timestamp = datetime.datetime.fromtimestamp(bucket.key / 1000,tz=datetime.timezone.utc)
             if timestamp >= after and timestamp < before and bucket.doc_count > 0:
                 data = bucket.resources.value.to_dict()
                 data["count"] = bucket.doc_count
@@ -259,42 +199,112 @@ def resource_summaries(host, index, after, before, interval):
                 data["_keys"]["timestamp"] = timestamp.strftime("%Y-%m-%dT%H:%M:%S")
                 yield data
 
-
-buckets = resource_summaries(
-    options.input_index["host"],
-    options.input_index["index"],
-    after,
-    before,
-    options.interval,
-)
-
-
-def make_insert(
-    generator,
-    index=options.output_index["index"],
-    id_keys=["timestamp", "resource", "site", "slot_type"],
-):
+def make_insert(generator, index, id_keys=["timestamp", "resource", "site", "slot_type"]):
     for entry in generator:
         data = dict(entry)
         data["_index"] = index
-        data["_type"] = "resource_summary"
         key = data.pop("_keys")
         data["_id"] = ".".join([key[k] for k in id_keys])
         data.update(key)
         yield data
 
-
-if options.dry_run:
-    import json
-    import sys
-
-    for bucket in make_insert(buckets):
-        json.dump(bucket, sys.stdout)
-        sys.stdout.write("\n")
-else:
-    es = elasticsearch.Elasticsearch(hosts=options.output_index["host"], timeout=5000)
-    index = options.output_index["index"]
-
-    success, _ = elasticsearch.helpers.bulk(
-        es, make_insert(buckets), max_retries=20, initial_backoff=2, max_backoff=3600,
+if __name__ == '__main__':
+    parser = ArgumentParser(
+        description=__doc__, formatter_class=ArgumentDefaultsHelpFormatter
     )
+    parser.add_argument(
+        "--after", default="2d", help="maximum time to look back", type=get_datetime,
+    )
+    parser.add_argument(
+        "--before", default="0d", help="minimum time to look back", type=get_datetime,
+    )
+    parser.add_argument(
+        "--interval", default="20m", help="aggregation interval",
+    )
+    parser.add_argument(
+        "-y",
+        "--dry-run",
+        default=False,
+        action="store_true",
+        help="query status, but do not ingest into ES",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        default=False,
+        action="store_true",
+        help="use verbose logging in ES",
+    )
+    parser.add_argument(
+        "-i",
+        "--input-index",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-index",
+    )
+    parser.add_argument("-a", "--address", help="elasticsearch address")
+    parser.add_argument('--client_id',help='oauth2 client id',default=None)
+    parser.add_argument('--client_secret',help='oauth2 client secret',default=None)
+    parser.add_argument('--token_url',help='oauth2 realm token url',default=None)
+
+    options = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s : %(message)s"
+    )
+    if options.verbose:
+        logging.getLogger("elasticsearch").setLevel("DEBUG")
+
+    # round time range to nearest interval
+    interval_delta =  parse_timedelta(options.interval)
+    after = snap_to_interval(options.after, interval_delta)
+    # ...only if last bin is far enough in the past to be complete
+    if datetime.datetime.now(datetime.timezone.utc) - options.before >  interval_delta:
+        before = snap_to_interval(options.before,  interval_delta)
+    else:
+        before = options.before
+
+    if not before > after:
+        parser.error("--before must be > --after")
+
+    prefix = "http"
+    address = options.address
+    if "://" in address:
+        prefix, address = address.split("://")
+
+    url = f"{prefix}://{address}"
+
+    if None not in (options.token_url, options.client_secret, options.client_id):
+        api = ClientCredentialsAuth(address='https://elastic.icecube.aq',
+                                    token_url=options.token_url,
+                                    client_secret=options.client_secret,
+                                    client_id=options.client_id)
+    else:
+        exit
+    token = api.make_access_token()
+
+    es = elasticsearch.Elasticsearch(url, 
+                request_timeout=5000,
+                bearer_auth=token,
+                sniff_on_node_failure=True)
+
+    buckets = resource_summaries(
+        es,
+        options.input_index,
+        after,
+        before,
+        options.interval,
+    )
+
+    if options.dry_run:
+        import json
+        import sys
+
+        for bucket in make_insert(buckets):
+            json.dump(bucket, sys.stdout)
+            sys.stdout.write("\n")
+    else:
+        success, _ = elasticsearch.helpers.bulk(
+            es, make_insert(buckets, options.output_index), max_retries=20, initial_backoff=2, max_backoff=3600,
+        )
