@@ -3,8 +3,6 @@
 Read from condor status and write to elasticsearch
 """
 
-
-
 import glob
 import json
 import logging
@@ -20,17 +18,38 @@ import elasticsearch_dsl as edsl
 from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 from elasticsearch_dsl import MultiSearch, Search
+from elasticsearch.helpers import bulk, BulkIndexError
 import htcondor
+from rest_tools.client import ClientCredentialsAuth
 
 from condor_utils import *
 
-regex = re.compile(
+REGEX = re.compile(
     r"((?P<days>\d+?)d)?((?P<hours>\d+?)h)?((?P<minutes>\d+?)m)?((?P<seconds>\d+?)s)?"
 )
+# note different capitalization conventions for GPU and Cpu
+RESOURCES = ("GPUs", "Cpus", "Memory", "Disk")
+STATUSES = ("evicted", "removed", "finished", "failed")
+INDEX = "condor_status"
 
+class Dry:
+    """Helper class for debugging"""
+    _dryrun = False
+    
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, *args, **kwargs):
+        if self._dryrun:
+            logging.info(self.func.__name__)
+            logging.info(args)
+            logging.info(kwargs)
+            
+        else:
+            return self.func(*args,**kwargs)
 
 def parse_time(time_str):
-    parts = regex.match(time_str)
+    parts = REGEX.match(time_str)
     if not parts:
         raise ValueError
     parts = parts.groupdict()
@@ -40,62 +59,20 @@ def parse_time(time_str):
             time_params[name] = int(param)
     return timedelta(**time_params)
 
-
-parser = ArgumentParser("usage: %prog [options] collector_addresses")
-parser.add_argument("-a", "--address", help="elasticsearch address")
-parser.add_argument(
-    "-n",
-    "--indexname",
-    default="condor_status",
-    help="index name (default condor_status)",
-)
-parser.add_argument(
-    "--after", default=timedelta(hours=1), help="time to look back", type=parse_time
-)
-parser.add_argument(
-    "-y",
-    "--dry-run",
-    default=False,
-    action="store_true",
-    help="query status, but do not ingest into ES",
-)
-parser.add_argument(
-    "-v",
-    "--verbose",
-    default=False,
-    action="store_true",
-    help="use verbose logging in ES",
-)
-parser.add_argument("collectors", nargs="+")
-options = parser.parse_args()
-
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s : %(message)s"
-)
-if options.verbose:
-    logging.getLogger("elasticsearch").setLevel("DEBUG")
-
-
-# note different capitalization conventions for GPU and Cpu
-RESOURCES = ("GPUs", "Cpus", "Memory", "Disk")
-STATUSES = ("evicted", "removed", "finished", "failed")
-
-
 def update_machines(entries):
     """
     Generate upsert ops from machine classad dictionaries
     """
     for data in entries:
         yield {
-            "_index": options.indexname,
+            "_index": INDEX,
             "_op_type": "update",
-            "_type": "machine_ad",
             "_id": "{:.0f}-{:s}".format(
                 time.mktime(data["DaemonStartTime"].timetuple()), data["Name"]
             ),
             "upsert": data,
             "script": {
-                "id": options.indexname + "-update-machine",
+                "id": INDEX + "-update-machine",
                 "params": {
                     "duration": data["duration"],
                     "LastHeardFrom": data["LastHeardFrom"],
@@ -124,7 +101,7 @@ def update_jobs(entries, history=False):
     # glidein names are not necessarily unique on long time scales. look up the
     # last glidein that started with the advertised name _before_ the evicted
     # job was started
-    ms = MultiSearch(using=es, index=options.indexname)
+    ms = MultiSearch(using=es, index=INDEX)
     for hit in jobs:
         try:
             if history:
@@ -137,7 +114,7 @@ def update_jobs(entries, history=False):
             ms = ms.add(
                 Search()
                 .filter("term", Name__keyword=parent_slot_name(hit["LastRemoteHost"]))
-                .filter("range", DaemonStartTime={"lte": datetime.utcfromtimestamp(t0)},)
+                .filter("range", DaemonStartTime={"lte": datetime.fromtimestamp(t0)},)
                 .sort({"DaemonStartTime": {"order": "desc"}})
                 .source(["nuthin"])[:1]
             )
@@ -178,10 +155,9 @@ def update_jobs(entries, history=False):
         doc = {
             "_op_type": "update",
             "_index": match.hits[0].meta.index,
-            "_type": match.hits[0].meta.doc_type,
             "_id": match.hits[0].meta.id,
             "script": {
-                "id": options.indexname + "-update-jobs",
+                "id": INDEX + "-update-jobs",
                 "params": {
                     "job": hit["GlobalJobId"].replace("#", "-").replace(".", "-"),
                     "category": category,
@@ -191,63 +167,20 @@ def update_jobs(entries, history=False):
         }
         yield doc
 
-
-prefix = "http"
-address = options.address
-if "://" in address:
-    prefix, address = address.split("://")
-
-url = "{}://{}".format(prefix, address)
-logging.info("connecting to ES at %s", url)
-es = Elasticsearch(hosts=[url], timeout=5000)
-
-
-def es_import(document_generator):
-    if options.dry_run:
-        for hit in document_generator:
-            logging.info(hit)
-        success = True
-    else:
+@Dry
+def es_import(gen, es):
+    try:
         success, _ = bulk(es, gen, max_retries=20, initial_backoff=2, max_backoff=3600)
-    return success
+        return success
+    except BulkIndexError as e:
+        for error in e.errors:
+            logging.info(json.dumps(error, indent=2, default=str))
 
 
-machine_ad = edsl.Mapping.from_es(
-    doc_type="machine_ad", index=options.indexname, using=es
-)
-if not "claims" in machine_ad or not "failed" in machine_ad.to_dict()['machine_ad']['properties']['claims']['properties']:
-    machine_ad.field(
-        "jobs",
-        edsl.Object(properties={status: edsl.Text(multi=True) for status in STATUSES}),
-    )
-    machine_ad.field(
-        "claims",
-        edsl.Object(
-            properties={
-                status: edsl.Object(
-                    properties={resource: edsl.Float() for resource in RESOURCES}
-                )
-                for status in STATUSES
-            }
-        ),
-    )
-    machine_ad.field(
-        "occupancy",
-        edsl.Object(
-            properties={
-                status: edsl.Object(
-                    properties={resource: edsl.Float() for resource in RESOURCES}
-                )
-                for status in STATUSES + ("total",)
-            }
-        ),
-    )
-    machine_ad.field("duration", edsl.Integer())
-    machine_ad.save(options.indexname, using=es)
-    # Claim update, triggered each time a job is removed from a machine
+def put_scripts(es, index):
     es.put_script(
-        options.indexname + "-update-jobs",
-        {
+        id=index + "-update-jobs",
+        body={
             "script": {
                 "source": textwrap.dedent(
                     """
@@ -301,8 +234,8 @@ if not "claims" in machine_ad or not "failed" in machine_ad.to_dict()['machine_a
 
     # Occupancy update, triggered every time a glidein increments LastHeardFrom
     es.put_script(
-        options.indexname + "-update-machine",
-        {
+        id=index + "-update-machine",
+        body={
             "script": {
                 "source": textwrap.dedent(
                     """
@@ -350,65 +283,142 @@ if not "claims" in machine_ad or not "failed" in machine_ad.to_dict()['machine_a
             }
         },
     )
+if __name__ == "__main__":
+    parser = ArgumentParser("usage: %prog [options] collector_addresses")
+    parser.add_argument("-a", "--address", help="elasticsearch address")
+    parser.add_argument(
+        "-n",
+        "--indexname",
+        default="condor_status",
+        help="index name (default condor_status)",
+    )
+    parser.add_argument(
+        "--after", default=timedelta(hours=1), help="time to look back", type=parse_time
+    )
+    parser.add_argument(
+        "-y",
+        "--dry-run",
+        default=False,
+        action="store_true",
+        help="query status, but do not ingest into ES",
+    )
+    parser.add_argument(
+        "-y",
+        "--put-script",
+        default=False,
+        action="store_true",
+        help="put/update ES update scripts at index",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        default=False,
+        action="store_true",
+        help="use verbose logging in ES",
+    )
+    parser.add_argument('--client_id',help='oauth2 client id',default=None)
+    parser.add_argument('--client_secret',help='oauth2 client secret',default=None)
+    parser.add_argument('--token_url',help='oauth2 realm token url',default=None)
+    parser.add_argument('--token',help='oauth2 token',default=None)
+    parser.add_argument("collectors", nargs="+")
+    options = parser.parse_args()
 
-failed = False
-for coll_address in options.collectors:
-    try:
-        gen = update_machines(
-            read_status_from_collector(coll_address, datetime.now() - options.after)
-        )
-        success = es_import(gen)
+    INDEX = options.indexname
 
-        # Update claims from evicted and held jobs
-        after = time.mktime((datetime.now() - timedelta(minutes=10)).timetuple())
-        gen = update_jobs(
-            read_from_collector(
-                coll_address,
-                constraint=(
-                    "((LastVacateTime > {}) && ((LastVacateTime-JobLastStartDate))>60)"
-                    + " || ((JobStatus == 5) && (EnteredCurrentStatus > {}))"
-                ).format(after, after),
-                projection=[
-                    "GlobalJobId",
-                    "NumJobStarts",
-                    "JobStatus",
-                    "JobLastStartDate",
-                    "JobCurrentStartDate",
-                    "EnteredCurrentStatus",
-                    "LastVacateTime",
-                    "LastRemoteHost",
-                ]
-                + ["Request" + resource for resource in RESOURCES],
-            ),
-            history=False,
-        )
-        success = es_import(gen)
+    Dry._dryrun  = options.dry_run
 
-        # Update claims from finished jobs
-        gen = update_jobs(
-            read_from_collector(
-                coll_address,
-                constraint="!isUndefined(LastRemoteHost)",
-                projection=[
-                    "GlobalJobId",
-                    "NumJobStarts",
-                    "JobLastStartDate",
-                    "JobCurrentStartDate",
-                    "EnteredCurrentStatus",
-                    "JobStatus",
-                    "ExitCode",
-                    "LastRemoteHost",
-                ]
-                + ["Request" + resource for resource in RESOURCES],
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s : %(message)s"
+    )
+    if options.verbose:
+        logging.getLogger("elasticsearch").setLevel("DEBUG")
+
+
+    prefix = "http"
+    address = options.address
+    if "://" in address:
+        prefix, address = address.split("://")
+
+
+    token = None
+
+    if options.token is not None:
+        token = options.token
+    elif None not in (options.token_url, options.client_secret, options.client_id):
+        api = ClientCredentialsAuth(address='https://elasticsearch.icecube.aq',
+                                    token_url=options.token_url,
+                                    client_secret=options.client_secret,
+                                    client_id=options.client_id)
+        token = api.make_access_token()
+
+    url = "{}://{}".format(prefix, address)
+    logging.info("connecting to ES at %s", url)
+    es = Elasticsearch(hosts=[url], 
+                    timeout=5000,
+                    bearer_auth=token,
+                    sniff_on_node_failure=True)
+
+    if options.put_script:
+        put_scripts(options.index)
+
+    failed = False
+    for coll_address in options.collectors:
+        try:
+            gen = update_machines(
+                read_status_from_collector(coll_address, datetime.now() - options.after)
+            )
+            success = es_import(gen, es)
+
+            # Update claims from evicted and held jobs
+            after = time.mktime((datetime.now() - timedelta(minutes=10)).timetuple())
+            gen = update_jobs(
+                read_from_collector(
+                    coll_address,
+                    constraint=(
+                        "((LastVacateTime > {}) && ((LastVacateTime-JobLastStartDate))>60)"
+                        + " || ((JobStatus == 5) && (EnteredCurrentStatus > {}))"
+                    ).format(after, after),
+                    projection=[
+                        "GlobalJobId",
+                        "NumJobStarts",
+                        "JobStatus",
+                        "JobLastStartDate",
+                        "JobCurrentStartDate",
+                        "EnteredCurrentStatus",
+                        "LastVacateTime",
+                        "LastRemoteHost",
+                    ]
+                    + ["Request" + resource for resource in RESOURCES],
+                ),
+                history=False,
+            )
+            success = es_import(gen, es)
+
+            # Update claims from finished jobs
+            gen = update_jobs(
+                read_from_collector(
+                    coll_address,
+                    constraint="!isUndefined(LastRemoteHost)",
+                    projection=[
+                        "GlobalJobId",
+                        "NumJobStarts",
+                        "JobLastStartDate",
+                        "JobCurrentStartDate",
+                        "EnteredCurrentStatus",
+                        "JobStatus",
+                        "ExitCode",
+                        "LastRemoteHost",
+                    ]
+                    + ["Request" + resource for resource in RESOURCES],
+                    history=True,
+                ),
                 history=True,
-            ),
-            history=True,
-        )
-        success = es_import(gen)
+            )
+            success = es_import(gen, es)
 
-    except htcondor.HTCondorIOError as e:
-        failed = e
-        logging.error('Condor error', exc_info=True)
+        except htcondor.HTCondorIOError as e:
+            failed = e
+            logging.error('Condor error', exc_info=True)
 
-if failed:
-    raise failed
+    if failed:
+        raise failed

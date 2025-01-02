@@ -81,7 +81,7 @@ logging.info('connecting to ES at %s',url)
 es = Elasticsearch(hosts=[url],
                    timeout=5000,
                    bearer_auth=token)
-es_import = partial(bulk, es, max_retries=20, initial_backoff=2, max_backoff=3600)
+es_import = partial(bulk, es, max_retries=20, initial_backoff=10, max_backoff=3600)
 
 failed = False
 if options.collectors:

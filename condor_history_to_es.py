@@ -25,6 +25,7 @@ parser.add_argument('--collectors', default=False, action='store_true',
 parser.add_argument('--client_id',help='oauth2 client id',default=None)
 parser.add_argument('--client_secret',help='oauth2 client secret',default=None)
 parser.add_argument('--token_url',help='oauth2 realm token url',default=None)
+parser.add_argument('--token',help='oauth2 token',default=None)
 parser.add_argument("positionals", nargs='+')
 
 options = parser.parse_args()
@@ -57,8 +58,10 @@ if '://' in address:
 
 token = None
 
-if None not in (options.token_url, options.client_secret, options.client_id):
-    api = ClientCredentialsAuth(address='https://elasticsearch.icecube.aq',
+if options.token is not None:
+    token = options.token
+elif None not in (options.token_url, options.client_secret, options.client_id):
+    api = ClientCredentialsAuth(address='https://elastic.icecube.aq',
                                 token_url=options.token_url,
                                 client_secret=options.client_secret,
                                 client_id=options.client_id)
@@ -68,7 +71,8 @@ url = '{}://{}'.format(prefix, address)
 logging.info('connecting to ES at %s',url)
 es = Elasticsearch(hosts=[url],
                    request_timeout=5000,
-                   bearer_auth=token)
+                   bearer_auth=token,
+                   sniff_on_connection_fail=True)
 
 def es_import(document_generator):
     if options.dry_run:
@@ -78,7 +82,7 @@ def es_import(document_generator):
             json.dump(hit, sys.stdout)
         success = True
     else:
-        success, _ = bulk(es, document_generator, max_retries=20, initial_backoff=2, max_backoff=360)
+        success, _ = bulk(es, document_generator, max_retries=20, initial_backoff=10, max_backoff=360)
     return success
 
 failed = False
