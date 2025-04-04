@@ -12,6 +12,7 @@ from condor_metrics import *
 from itertools import chain
 from datetime import datetime
 from dateutil import parser as dateparser
+
 def get_job_state(ad):
     jobstatus = None
 
@@ -99,7 +100,13 @@ if __name__ == '__main__':
                     logging.error('Condor error', exc_info=True)
             gen = chain(*gens)
             metrics.clear()
+
+            start_compose_metrics = time.perf_counter()
             compose_ad_metrics(generate_ads(gen))
+            end_compose_metrics = time.perf_counter
+
+            print('Took {} seconds to compose metrics',start_compose_metrics)
+
             delta = time.time() - start
             
             if delta < options.interval:
