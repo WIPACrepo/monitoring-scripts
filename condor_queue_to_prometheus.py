@@ -32,7 +32,8 @@ def generate_ads(entries):
 
 def compose_ad_metrics(ads):
     for ad in ads:
-        walltime = int(ad['RequestCpus']) * (datetime.utcnow() - dateparser.parse(ad['JobCurrentStartDate'])).total_seconds()
+
+        walltime = int(ad['RequestCpus']) * (datetime.now(datetime.timezone.utc) - dateparser.parse(ad['JobCurrentStartDate'])).total_seconds()
         labels = {key: None for key in metrics.labels}
 
         labels['schedd'] = ad['GlobalJobId'].split('#')[0]
@@ -49,15 +50,20 @@ def compose_ad_metrics(ads):
         labels['group'] = group
         labels['owner'] = ad['Owner']
 
+        try:
+            metrics.condor_jobs_cpu_request.labels(**labels).inc(float(ad['RequestCpus']))
+            metrics.condor_jobs_disk_request_bytes.labels(**labels).inc(float(ad['RequestDisk'])*1024)
+            metrics.condor_jobs_memory_request_bytes.labels(**labels).inc(float(ad['RequestMemory'])*1024*1024)
+        except Exception as e:
+            logging.error(e)
+
         metrics.condor_jobs_count.labels(**{'exit_code': ad['ExitCode'],**labels}).inc()
-        metrics.condor_jobs_cpu_request.labels(**labels).inc(ad['RequestCpus'])
         metrics.condor_jobs_cputime.labels(**labels).inc(ad['RemoteUserCpu'])
-        metrics.condor_jobs_disk_request_bytes.labels(**labels).inc(ad['RequestDisk']*1024)
         metrics.condor_jobs_disk_usage_bytes.labels(**labels).inc(ad['DiskUsage_RAW']*1024)
-        metrics.condor_jobs_memory_request_bytes.labels(**labels).inc(ad['RequestMemory']*1024*1024)
         metrics.condor_jobs_memory_usage_bytes.labels(**labels).inc(ad['ResidentSetSize_RAW']*1024)
         metrics.condor_jobs_walltime.labels(**labels).inc(walltime)
         metrics.condor_jobs_wastetime.labels(**labels).inc(walltime - ad['RemoteUserCpu'])
+
 
         if 'RequestGpus' in ad:
             metrics.condor_jobs_gpu_request.labels(**labels).inc(ad['RequestGpus'])
@@ -103,11 +109,12 @@ if __name__ == '__main__':
 
             start_compose_metrics = time.perf_counter()
             compose_ad_metrics(generate_ads(gen))
-            end_compose_metrics = time.perf_counter
+            end_compose_metrics = time.perf_counter()
 
-            print('Took {} seconds to compose metrics',start_compose_metrics)
+            compose_diff = end_compose_metrics - start_compose_metrics
+            logging.info(f'Took {compose_diff} seconds to compose metrics')
 
             delta = time.time() - start
-            
+
             if delta < options.interval:
                 time.sleep(options.interval - delta)
