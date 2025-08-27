@@ -94,27 +94,33 @@ if __name__ == '__main__':
 
     prometheus_client.start_http_server(options.port)
 
-    if options.collectors:
-        while True:
-            gens = []
-            start = time.time()
+    while True:
+        gens = []
+        start = time.time()
+        if options.collectors:
             for coll_address in args:
                 try:
                     gens.append(read_from_collector(coll_address))
                 except htcondor.HTCondorIOError as e:
                     failed = e
                     logging.error('Condor error', exc_info=True)
-            gen = chain(*gens)
-            metrics.clear()
+        if options.schedd:
+            try:
+                gens.append(read_from_collector(coll_address))
+            except htcondor.HTCondorIOError as e:
+                failed = e
+                logging.error('Condor error', exc_info=True)
+        gen = chain(*gens)
+        metrics.clear()
 
-            start_compose_metrics = time.perf_counter()
-            compose_ad_metrics(generate_ads(gen))
-            end_compose_metrics = time.perf_counter()
+        start_compose_metrics = time.perf_counter()
+        compose_ad_metrics(generate_ads(gen))
+        end_compose_metrics = time.perf_counter()
 
-            compose_diff = end_compose_metrics - start_compose_metrics
-            logging.info(f'Took {compose_diff} seconds to compose metrics')
+        compose_diff = end_compose_metrics - start_compose_metrics
+        logging.info(f'Took {compose_diff} seconds to compose metrics')
 
-            delta = time.time() - start
+        delta = time.time() - start
 
-            if delta < options.interval:
-                time.sleep(options.interval - delta)
+        if delta < options.interval:
+            time.sleep(options.interval - delta)

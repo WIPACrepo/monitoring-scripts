@@ -9,6 +9,7 @@ import time
 import prometheus_client
 from datetime import datetime
 from collections import defaultdict
+from socket import gethostbyname
 
 utc_format = '%Y-%m-%dT%H:%M:%S'
 
@@ -19,17 +20,17 @@ def generate_ads(entries):
 
 def last_jobs_dict(collector):
     last_job = defaultdict(dict)
-    
+
     for collector in args:
         schedd_ads = locate_schedds(collector)
         if schedd_ads is None:
             return None
-    
+
         for s in schedd_ads:
             last_job[s.get('Name')] = {'ClusterId': None, 'EnteredCurrentStatus': None}
 
     return last_job
-    
+
 
 def locate_schedds(collector):
     try:
@@ -44,7 +45,7 @@ def compose_ad_metrics(ad, metrics):
 
         Args:
             ad (classad): an HTCondor job classad
-            metrics (JobMetrics): JobMetrics object 
+            metrics (JobMetrics): JobMetrics object
     '''
     # ignore this ad if walltimehrs is negative or a dagman
     if ad['walltimehrs'] < 0 or ad['Cmd'] == '/usr/bin/condor_dagman':
@@ -64,7 +65,7 @@ def compose_ad_metrics(ad, metrics):
     labels['site'] = ad['site']
     labels['schedd'] = ad['GlobalJobId'][0:ad['GlobalJobId'].find('#')]
     labels['GPUDeviceName'] = None
-    
+
     if ad['ExitCode'] == 0 and ad['ExitBySignal'] is False and ad['JobStatus'] == 4:
         labels['usage'] = 'goodput'
     else:
@@ -83,7 +84,7 @@ def compose_ad_metrics(ad, metrics):
         resource_hrs = ad['cpuhrs']
         resource_request = ad['RequestCpus']
 
-    try: 
+    try:
         labels['IceProdDataset'] = ad['IceProdDataset']
         labels['IceProdTaskName'] = ad['IceProdTaskName']
     except:
@@ -112,19 +113,7 @@ def query_collector(collector, metrics, last_job):
         name = schedd_ad.get('Name')
 
         ads = read_from_schedd(schedd_ad, history=True, since=last_job[name]['ClusterId'])
-        if last_job[name]['EnteredCurrentStatus'] is not None:
-            logging.info(f'{name} - read ads since {last_job[name]["ClusterId"]}:{last_job[name]["EnteredCurrentStatus"]} at timestamp {datetime.strptime(last_job[name]["EnteredCurrentStatus"],utc_format)}')
-
-        for ad in generate_ads(ads):
-            if last_job[name]['ClusterId'] is None:
-                last_job[name]['ClusterId'] = int(ad['ClusterId'])
-                last_job[name]['EnteredCurrentStatus'] = ad['EnteredCurrentStatus']
-
-            if datetime.strptime(ad['EnteredCurrentStatus'],utc_format) > datetime.strptime(last_job[name]['EnteredCurrentStatus'],utc_format):
-                last_job[name]['ClusterId'] = int(ad['ClusterId'])
-                last_job[name]['EnteredCurrentStatus'] = ad['EnteredCurrentStatus']
-
-            compose_ad_metrics(ad, metrics)
+        iterate_ads(ads, name, metrics)
 
 def read_from_schedd(schedd_ad, history=False, constraint='true', projection=[],match=10000,since=None):
         """Connect to schedd and pull ads directly.
@@ -132,7 +121,7 @@ def read_from_schedd(schedd_ad, history=False, constraint='true', projection=[],
         A generator that yields condor job dicts.
 
         Args:
-            schedd (ClassAd): location_add of a schedd, from either htcondor.Colletor locate() or locateAll() 
+            schedd (ClassAd): location_add of a schedd, from either htcondor.Colletor locate() or locateAll()
             history (bool): read history (True) or active queue (default: False)
             constraint (string): string representation of a classad expression
             match (int): number of job ads to return
@@ -158,6 +147,21 @@ def read_from_schedd(schedd_ad, history=False, constraint='true', projection=[],
         except Exception:
             logging.info('%s failed', schedd_ad['Name'], exc_info=True)
 
+def iterate_ads(ads, name, metrics, last_job):
+    if last_job[name]['EnteredCurrentStatus'] is not None:
+        logging.info(f'{name} - read ads since {last_job[name]["ClusterId"]}:{last_job[name]["EnteredCurrentStatus"]} at timestamp {datetime.strptime(last_job[name]["EnteredCurrentStatus"],utc_format)}')
+
+    for ad in generate_ads(ads):
+        if last_job[name]['ClusterId'] is None:
+            last_job[name]['ClusterId'] = int(ad['ClusterId'])
+            last_job[name]['EnteredCurrentStatus'] = ad['EnteredCurrentStatus']
+
+        if datetime.strptime(ad['EnteredCurrentStatus'],utc_format) > datetime.strptime(last_job[name]['EnteredCurrentStatus'],utc_format):
+            last_job[name]['ClusterId'] = int(ad['ClusterId'])
+            last_job[name]['EnteredCurrentStatus'] = ad['EnteredCurrentStatus']
+
+        compose_ad_metrics(ad, metrics)
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s : %(message)s')
 
@@ -168,6 +172,7 @@ if __name__ == '__main__':
     # TODO: Add file tail function for condor history files
     #parser.add_option('-f','--histfile',
     #                help='history file to read from')
+    parser.add_option('-s','--schedd',default=False, action='store_true')
     parser.add_option('-p','--port', default=9100,
                     action='store', type='int',
                     help='port number for prometheus exporter')
@@ -197,6 +202,28 @@ if __name__ == '__main__':
             start = time.time()
             for collector in args:
                 query_collector(collector, metrics, last_job)
+
+            delta = time.time() - start
+            # sleep for interval minus scrape duration
+            # if scrape duration was longer than interval, run right away
+            if delta < options.interval:
+                time.sleep(options.interval - delta)
+    if options.schedd:
+        last_job = last_jobs_dict(args)
+
+        ip = gethostbyname(args)
+        schedd_ad = classad.ClassAd({
+                'Name': address,
+                'MyAddress': f'<{ip}:{port}?address={ip}-{port}&alias={address}>'
+        })
+        if last_job is None:
+            logging.error(f'No schedds found')
+            exit()
+
+        while True:
+            start = time.time()
+            ads = read_from_schedd(schedd_ad, history=True, since=last_job[args]['ClusterId'])
+            iterate_ads(ads, args, metrics)
 
             delta = time.time() - start
             # sleep for interval minus scrape duration
