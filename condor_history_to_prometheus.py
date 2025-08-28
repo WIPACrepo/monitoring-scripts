@@ -32,13 +32,20 @@ def last_jobs_dict(collector):
     return last_job
 
 
-def locate_schedds(collector):
-    try:
-        coll = htcondor.Collector(collector)
-        return coll.locateAll(htcondor.DaemonTypes.Schedd)
-    except htcondor.HTCondorIOError as e:
-        failed = e
-        logging.error(f'Condor error: {e}')
+def locate_schedds(collector, access_points):
+    coll = htcondor.Collector(collector)
+    schedds = []
+    if access_points:
+        try:
+            for ap in access_points:
+                schedds += coll.locate(htcondor.DaemonTypes.Schedd, ap)
+        except htcondor.HTCondorIOError as e:
+            logging.error(f'Condor error: {e}')
+    else:
+        try:
+            schedds += coll.locateAll(htcondor.DaemonTypes.Schedd)
+        except htcondor.HTCondorIOError as e:
+            logging.error(f'Condor error: {e}')
 
 def compose_ad_metrics(ad, metrics):
     ''' Parse condor job classad and update metrics
@@ -101,7 +108,7 @@ def compose_ad_metrics(ad, metrics):
     metrics.condor_job_mem_req.labels(**labels).observe(ad['RequestMemory']/1024)
     metrics.condor_job_mem_used.labels(**labels).observe(ad['ResidentSetSize_RAW']/1048576)
 
-def query_collector(collector, metrics, last_job):
+def query_collector(collector, access_points, metrics, last_job):
     """Query schedds for job ads
 
     Args:
@@ -109,7 +116,7 @@ def query_collector(collector, metrics, last_job):
         metrics (JobMetrics): JobMetrics instance
         last_job (dict): dictionary for tracking last ClusterId by schedd
     """
-    for schedd_ad in locate_schedds(collector):
+    for schedd_ad in locate_schedds(collector, access_points):
         name = schedd_ad.get('Name')
 
         ads = read_from_schedd(schedd_ad, history=True, since=last_job[name]['ClusterId'])
@@ -202,28 +209,6 @@ if __name__ == '__main__':
             start = time.time()
             for collector in args:
                 query_collector(collector, metrics, last_job)
-
-            delta = time.time() - start
-            # sleep for interval minus scrape duration
-            # if scrape duration was longer than interval, run right away
-            if delta < options.interval:
-                time.sleep(options.interval - delta)
-    if options.schedd:
-        last_job = last_jobs_dict(args)
-
-        ip = gethostbyname(args)
-        schedd_ad = classad.ClassAd({
-                'Name': address,
-                'MyAddress': f'<{ip}:{port}?address={ip}-{port}&alias={address}>'
-        })
-        if last_job is None:
-            logging.error(f'No schedds found')
-            exit()
-
-        while True:
-            start = time.time()
-            ads = read_from_schedd(schedd_ad, history=True, since=last_job[args]['ClusterId'])
-            iterate_ads(ads, args, metrics)
 
             delta = time.time() - start
             # sleep for interval minus scrape duration

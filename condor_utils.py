@@ -761,7 +761,7 @@ def read_from_file(filename):
             else:
                 entry += line+'\n'
 
-def read_from_collector(address, history=False, constraint='true', projection=[], match=10000):
+def read_from_collector(address, access_points=None, history=False, constraint='true', projection=[], match=10000):
     """Connect to condor collectors and schedds to pull job ads directly.
 
     A generator that yields condor job dicts.
@@ -772,7 +772,12 @@ def read_from_collector(address, history=False, constraint='true', projection=[]
     """
     import htcondor
     coll = htcondor.Collector(address)
-    schedd_ads = coll.locateAll(htcondor.DaemonTypes.Schedd)
+    schedd_ads = []
+    if access_points:
+        for ap in access_points:
+            schedd_ads += coll.locate(htcondor.DaemonTypes.Schedd, ap)
+    else:
+        schedd_ads = coll.locateAll(htcondor.DaemonTypes.Schedd)
     for schedd_ad in schedd_ads:
         logging.info('getting job ads from %s', schedd_ad['Name'])
         schedd = htcondor.Schedd(schedd_ad)
@@ -789,40 +794,6 @@ def read_from_collector(address, history=False, constraint='true', projection=[]
             logging.info('got %d entries', i)
         except Exception:
             logging.info('%s failed', schedd_ad['Name'], exc_info=True)
-
-def read_from_schedd(address, port=9618, history=False, constraint='true', projection=[], match=10000):
-    """Connect directly to condor schedd to pull job ads directly.
-
-    A generator that yields condor job dicts.
-
-    Args:
-        address (str): address of schedd
-        history (bool): read history (True) or active queue (default: False)
-    """
-    import htcondor
-    import classad
-    from socket import gethostbyname
-
-    ip = gethostbyname(address)
-    schedd_ad = classad.ClassAd({
-            'Name': address,
-            'MyAddress': f'<{ip}:{port}?address={ip}-{port}&alias={address}>'
-    })
-    schedd = htcondor.Schedd(schedd_ad)
-    logging.info('getting job ads from %s', schedd_ad['Name'])
-    try:
-        i = 0
-        if history:
-            start_dt = datetime.now()-timedelta(minutes=10)
-            start_stamp = time.mktime(start_dt.timetuple())
-            gen = schedd.history('(EnteredCurrentStatus >= {0}) && ({1})'.format(start_stamp,constraint),projection,match=match)
-        else:
-            gen = schedd.query(constraint, projection)
-        for i,entry in enumerate(gen):
-            yield classad_to_dict(entry)
-        logging.info('got %d entries', i)
-    except Exception:
-        logging.info('%s failed', schedd_ad['Name'], exc_info=True)
 
 
 def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1)):

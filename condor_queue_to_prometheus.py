@@ -97,6 +97,13 @@ if __name__ == '__main__':
     while True:
         gens = []
         start = time.time()
+        if options.access_points:
+            for coll_address in args:
+                try:
+                    gens.append(read_from_collector(coll_address, options.access_points))
+                except htcondor.HTCondorIOError as e:
+                    failed = e
+                    logging.error('Condor error', exc_info=True)
         if options.collectors:
             for coll_address in args:
                 try:
@@ -104,12 +111,6 @@ if __name__ == '__main__':
                 except htcondor.HTCondorIOError as e:
                     failed = e
                     logging.error('Condor error', exc_info=True)
-        if options.schedd:
-            try:
-                gens.append(read_from_collector(coll_address))
-            except htcondor.HTCondorIOError as e:
-                failed = e
-                logging.error('Condor error', exc_info=True)
         gen = chain(*gens)
         metrics.clear()
 
