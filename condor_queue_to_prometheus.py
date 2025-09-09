@@ -75,7 +75,7 @@ if __name__ == '__main__':
 
     parser.add_option('-c','--collectors',default=False, action='store_true',
                     help='read history from')
-
+    parser.add_option('-a','--access_points',default=None)
     parser.add_option('-p','--port', default=9100,
                     action='store', type='int',
                     help='port number for prometheus exporter')
@@ -94,27 +94,34 @@ if __name__ == '__main__':
 
     prometheus_client.start_http_server(options.port)
 
-    if options.collectors:
-        while True:
-            gens = []
-            start = time.time()
+    while True:
+        gens = []
+        start = time.time()
+        if options.access_points and options.collectors:
+            for coll_address in args:
+                try:
+                    gens.append(read_from_collector(coll_address, options.access_points))
+                except htcondor.HTCondorIOError as e:
+                    failed = e
+                    logging.error('Condor error', exc_info=True)
+        elif options.collectors:
             for coll_address in args:
                 try:
                     gens.append(read_from_collector(coll_address))
                 except htcondor.HTCondorIOError as e:
                     failed = e
                     logging.error('Condor error', exc_info=True)
-            gen = chain(*gens)
-            metrics.clear()
+        gen = chain(*gens)
+        metrics.clear()
 
-            start_compose_metrics = time.perf_counter()
-            compose_ad_metrics(generate_ads(gen))
-            end_compose_metrics = time.perf_counter()
+        start_compose_metrics = time.perf_counter()
+        compose_ad_metrics(generate_ads(gen))
+        end_compose_metrics = time.perf_counter()
 
-            compose_diff = end_compose_metrics - start_compose_metrics
-            logging.info(f'Took {compose_diff} seconds to compose metrics')
+        compose_diff = end_compose_metrics - start_compose_metrics
+        logging.info(f'Took {compose_diff} seconds to compose metrics')
 
-            delta = time.time() - start
+        delta = time.time() - start
 
-            if delta < options.interval:
-                time.sleep(options.interval - delta)
+        if delta < options.interval:
+            time.sleep(options.interval - delta)

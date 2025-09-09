@@ -761,7 +761,7 @@ def read_from_file(filename):
             else:
                 entry += line+'\n'
 
-def read_from_collector(address, history=False, constraint='true', projection=[],match=10000):
+def read_from_collector(address, access_points=None, history=False, constraint='true', projection=[], match=10000):
     """Connect to condor collectors and schedds to pull job ads directly.
 
     A generator that yields condor job dicts.
@@ -772,7 +772,12 @@ def read_from_collector(address, history=False, constraint='true', projection=[]
     """
     import htcondor
     coll = htcondor.Collector(address)
-    schedd_ads = coll.locateAll(htcondor.DaemonTypes.Schedd)
+    schedd_ads = []
+    if access_points:
+        for ap in access_points.split(','):
+            schedd_ads.append(coll.locate(htcondor.DaemonTypes.Schedd, ap))
+    else:
+        schedd_ads = coll.locateAll(htcondor.DaemonTypes.Schedd)
     for schedd_ad in schedd_ads:
         logging.info('getting job ads from %s', schedd_ad['Name'])
         schedd = htcondor.Schedd(schedd_ad)
@@ -789,6 +794,7 @@ def read_from_collector(address, history=False, constraint='true', projection=[]
             logging.info('got %d entries', i)
         except Exception:
             logging.info('%s failed', schedd_ad['Name'], exc_info=True)
+
 
 def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1)):
     """Connect to condor collectors and schedds to pull job ads directly.

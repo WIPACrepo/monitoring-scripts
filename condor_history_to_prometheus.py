@@ -9,6 +9,7 @@ import time
 import prometheus_client
 from datetime import datetime
 from collections import defaultdict
+from socket import gethostbyname
 
 utc_format = '%Y-%m-%dT%H:%M:%S'
 
@@ -19,32 +20,39 @@ def generate_ads(entries):
 
 def last_jobs_dict(collector):
     last_job = defaultdict(dict)
-    
+
     for collector in args:
         schedd_ads = locate_schedds(collector)
         if schedd_ads is None:
             return None
-    
+
         for s in schedd_ads:
             last_job[s.get('Name')] = {'ClusterId': None, 'EnteredCurrentStatus': None}
 
     return last_job
-    
 
-def locate_schedds(collector):
-    try:
-        coll = htcondor.Collector(collector)
-        return coll.locateAll(htcondor.DaemonTypes.Schedd)
-    except htcondor.HTCondorIOError as e:
-        failed = e
-        logging.error(f'Condor error: {e}')
+
+def locate_schedds(collector, access_points):
+    coll = htcondor.Collector(collector)
+    schedds = []
+    if access_points:
+        try:
+            for ap in access_points:
+                schedds.append(coll.locate(htcondor.DaemonTypes.Schedd, ap))
+        except htcondor.HTCondorIOError as e:
+            logging.error(f'Condor error: {e}')
+    else:
+        try:
+            schedds.append(coll.locateAll(htcondor.DaemonTypes.Schedd))
+        except htcondor.HTCondorIOError as e:
+            logging.error(f'Condor error: {e}')
 
 def compose_ad_metrics(ad, metrics):
     ''' Parse condor job classad and update metrics
 
         Args:
             ad (classad): an HTCondor job classad
-            metrics (JobMetrics): JobMetrics object 
+            metrics (JobMetrics): JobMetrics object
     '''
     # ignore this ad if walltimehrs is negative or a dagman
     if ad['walltimehrs'] < 0 or ad['Cmd'] == '/usr/bin/condor_dagman':
@@ -64,7 +72,7 @@ def compose_ad_metrics(ad, metrics):
     labels['site'] = ad['site']
     labels['schedd'] = ad['GlobalJobId'][0:ad['GlobalJobId'].find('#')]
     labels['GPUDeviceName'] = None
-    
+
     if ad['ExitCode'] == 0 and ad['ExitBySignal'] is False and ad['JobStatus'] == 4:
         labels['usage'] = 'goodput'
     else:
@@ -83,7 +91,7 @@ def compose_ad_metrics(ad, metrics):
         resource_hrs = ad['cpuhrs']
         resource_request = ad['RequestCpus']
 
-    try: 
+    try:
         labels['IceProdDataset'] = ad['IceProdDataset']
         labels['IceProdTaskName'] = ad['IceProdTaskName']
     except:
@@ -100,7 +108,7 @@ def compose_ad_metrics(ad, metrics):
     metrics.condor_job_mem_req.labels(**labels).observe(ad['RequestMemory']/1024)
     metrics.condor_job_mem_used.labels(**labels).observe(ad['ResidentSetSize_RAW']/1048576)
 
-def query_collector(collector, metrics, last_job):
+def query_collector(collector, access_points, metrics, last_job):
     """Query schedds for job ads
 
     Args:
@@ -108,23 +116,11 @@ def query_collector(collector, metrics, last_job):
         metrics (JobMetrics): JobMetrics instance
         last_job (dict): dictionary for tracking last ClusterId by schedd
     """
-    for schedd_ad in locate_schedds(collector):
+    for schedd_ad in locate_schedds(collector, access_points):
         name = schedd_ad.get('Name')
 
         ads = read_from_schedd(schedd_ad, history=True, since=last_job[name]['ClusterId'])
-        if last_job[name]['EnteredCurrentStatus'] is not None:
-            logging.info(f'{name} - read ads since {last_job[name]["ClusterId"]}:{last_job[name]["EnteredCurrentStatus"]} at timestamp {datetime.strptime(last_job[name]["EnteredCurrentStatus"],utc_format)}')
-
-        for ad in generate_ads(ads):
-            if last_job[name]['ClusterId'] is None:
-                last_job[name]['ClusterId'] = int(ad['ClusterId'])
-                last_job[name]['EnteredCurrentStatus'] = ad['EnteredCurrentStatus']
-
-            if datetime.strptime(ad['EnteredCurrentStatus'],utc_format) > datetime.strptime(last_job[name]['EnteredCurrentStatus'],utc_format):
-                last_job[name]['ClusterId'] = int(ad['ClusterId'])
-                last_job[name]['EnteredCurrentStatus'] = ad['EnteredCurrentStatus']
-
-            compose_ad_metrics(ad, metrics)
+        iterate_ads(ads, name, metrics)
 
 def read_from_schedd(schedd_ad, history=False, constraint='true', projection=[],match=10000,since=None):
         """Connect to schedd and pull ads directly.
@@ -132,7 +128,7 @@ def read_from_schedd(schedd_ad, history=False, constraint='true', projection=[],
         A generator that yields condor job dicts.
 
         Args:
-            schedd (ClassAd): location_add of a schedd, from either htcondor.Colletor locate() or locateAll() 
+            schedd (ClassAd): location_add of a schedd, from either htcondor.Colletor locate() or locateAll()
             history (bool): read history (True) or active queue (default: False)
             constraint (string): string representation of a classad expression
             match (int): number of job ads to return
@@ -158,6 +154,21 @@ def read_from_schedd(schedd_ad, history=False, constraint='true', projection=[],
         except Exception:
             logging.info('%s failed', schedd_ad['Name'], exc_info=True)
 
+def iterate_ads(ads, name, metrics, last_job):
+    if last_job[name]['EnteredCurrentStatus'] is not None:
+        logging.info(f'{name} - read ads since {last_job[name]["ClusterId"]}:{last_job[name]["EnteredCurrentStatus"]} at timestamp {datetime.strptime(last_job[name]["EnteredCurrentStatus"],utc_format)}')
+
+    for ad in generate_ads(ads):
+        if last_job[name]['ClusterId'] is None:
+            last_job[name]['ClusterId'] = int(ad['ClusterId'])
+            last_job[name]['EnteredCurrentStatus'] = ad['EnteredCurrentStatus']
+
+        if datetime.strptime(ad['EnteredCurrentStatus'],utc_format) > datetime.strptime(last_job[name]['EnteredCurrentStatus'],utc_format):
+            last_job[name]['ClusterId'] = int(ad['ClusterId'])
+            last_job[name]['EnteredCurrentStatus'] = ad['EnteredCurrentStatus']
+
+        compose_ad_metrics(ad, metrics)
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s : %(message)s')
 
@@ -168,6 +179,7 @@ if __name__ == '__main__':
     # TODO: Add file tail function for condor history files
     #parser.add_option('-f','--histfile',
     #                help='history file to read from')
+    parser.add_option('-a','--access_points',default=None)
     parser.add_option('-p','--port', default=9100,
                     action='store', type='int',
                     help='port number for prometheus exporter')
@@ -196,7 +208,7 @@ if __name__ == '__main__':
         while True:
             start = time.time()
             for collector in args:
-                query_collector(collector, metrics, last_job)
+                query_collector(collector, options.access_points,  metrics, last_job)
 
             delta = time.time() - start
             # sleep for interval minus scrape duration

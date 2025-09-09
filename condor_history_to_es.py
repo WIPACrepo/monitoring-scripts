@@ -12,20 +12,22 @@ from functools import partial
 from rest_tools.client import ClientCredentialsAuth
 
 parser = ArgumentParser('usage: %prog [options] history_files')
-parser.add_argument('-a','--address',help='elasticsearch address')
-parser.add_argument('-n','--indexname',default='condor',
-                  help='index name (default condor)')
+parser.add_argument('-a','--address', help='elasticsearch address')
+parser.add_argument('-n','--indexname', default='condor',
+                    help='index name (default condor)')
 parser.add_argument('--dailyindex', default=False, action='store_true',
-                  help='Index pattern daily')
+                    help='Index pattern daily')
 parser.add_argument("-y", "--dry-run", default=False,
-                  action="store_true",
-                  help="query jobs, but do not ingest into ES",)
+                    action="store_true",
+                    help="query jobs, but do not ingest into ES",)
 parser.add_argument('--collectors', default=False, action='store_true',
-                  help='Args are collector addresses, not files')
-parser.add_argument('--client_id',help='oauth2 client id',default=None)
-parser.add_argument('--client_secret',help='oauth2 client secret',default=None)
-parser.add_argument('--token_url',help='oauth2 realm token url',default=None)
-parser.add_argument('--token',help='oauth2 token',default=None)
+                    help='Args are collector addresses, not files')
+parser.add_argument('--access_points', default=None,
+                    help="Comma separated list of APs to query; e.g. --access_points submit-1,submit2")
+parser.add_argument('--client_id', help='oauth2 client id', default=None)
+parser.add_argument('--client_secret', help='oauth2 client secret', default=None)
+parser.add_argument('--token_url', help='oauth2 realm token url', default=None)
+parser.add_argument('--token', help='oauth2 token',default=None)
 parser.add_argument("positionals", nargs='+')
 
 options = parser.parse_args()
@@ -86,7 +88,15 @@ def es_import(document_generator):
     return success
 
 failed = False
-if options.collectors:
+if options.access_points and options.collectors:
+    for coll_address in options.positionals:
+        try:
+            gen = es_generator(read_from_collector(coll_address, options.access_points, history=True))
+            success = es_import(gen)
+        except htcondor.HTCondorIOError as e:
+            failed = e
+            logging.error('Condor error', exc_info=True)
+elif options.collectors:
     for coll_address in options.positionals:
         try:
             gen = es_generator(read_from_collector(coll_address, history=True))

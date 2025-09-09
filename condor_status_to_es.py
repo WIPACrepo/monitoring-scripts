@@ -35,7 +35,7 @@ INDEX = "condor_status"
 class Dry:
     """Helper class for debugging"""
     _dryrun = False
-    
+
     def __init__(self, func):
         self.func = func
 
@@ -44,7 +44,7 @@ class Dry:
             logging.info(self.func.__name__)
             logging.info(args)
             logging.info(kwargs)
-            
+
         else:
             return self.func(*args,**kwargs)
 
@@ -296,7 +296,7 @@ if __name__ == "__main__":
         "--after", default=timedelta(hours=1), help="time to look back", type=parse_time
     )
     parser.add_argument(
-        "-y",
+        "-d",
         "--dry-run",
         default=False,
         action="store_true",
@@ -353,7 +353,7 @@ if __name__ == "__main__":
 
     url = "{}://{}".format(prefix, address)
     logging.info("connecting to ES at %s", url)
-    es = Elasticsearch(hosts=[url], 
+    es = Elasticsearch(hosts=[url],
                     timeout=5000,
                     bearer_auth=token,
                     sniff_on_node_failure=True)
