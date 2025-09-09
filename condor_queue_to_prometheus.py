@@ -75,7 +75,7 @@ if __name__ == '__main__':
 
     parser.add_option('-c','--collectors',default=False, action='store_true',
                     help='read history from')
-
+    parser.add_option('-a','--access_points',default=None)
     parser.add_option('-p','--port', default=9100,
                     action='store', type='int',
                     help='port number for prometheus exporter')
@@ -97,14 +97,14 @@ if __name__ == '__main__':
     while True:
         gens = []
         start = time.time()
-        if options.access_points:
+        if options.access_points and options.collectors:
             for coll_address in args:
                 try:
                     gens.append(read_from_collector(coll_address, options.access_points))
                 except htcondor.HTCondorIOError as e:
                     failed = e
                     logging.error('Condor error', exc_info=True)
-        if options.collectors:
+        elif options.collectors:
             for coll_address in args:
                 try:
                     gens.append(read_from_collector(coll_address))

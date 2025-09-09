@@ -88,7 +88,7 @@ def es_import(document_generator):
     return success
 
 failed = False
-if options.access_points:
+if options.access_points and options.collectors:
     for coll_address in options.positionals:
         try:
             gen = es_generator(read_from_collector(coll_address, options.access_points, history=True))
@@ -96,7 +96,7 @@ if options.access_points:
         except htcondor.HTCondorIOError as e:
             failed = e
             logging.error('Condor error', exc_info=True)
-if options.collectors:
+elif options.collectors:
     for coll_address in options.positionals:
         try:
             gen = es_generator(read_from_collector(coll_address, history=True))

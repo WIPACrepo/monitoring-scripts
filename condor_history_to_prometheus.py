@@ -38,12 +38,12 @@ def locate_schedds(collector, access_points):
     if access_points:
         try:
             for ap in access_points:
-                schedds += coll.locate(htcondor.DaemonTypes.Schedd, ap)
+                schedds.append(coll.locate(htcondor.DaemonTypes.Schedd, ap))
         except htcondor.HTCondorIOError as e:
             logging.error(f'Condor error: {e}')
     else:
         try:
-            schedds += coll.locateAll(htcondor.DaemonTypes.Schedd)
+            schedds.append(coll.locateAll(htcondor.DaemonTypes.Schedd))
         except htcondor.HTCondorIOError as e:
             logging.error(f'Condor error: {e}')
 
@@ -179,7 +179,7 @@ if __name__ == '__main__':
     # TODO: Add file tail function for condor history files
     #parser.add_option('-f','--histfile',
     #                help='history file to read from')
-    parser.add_option('-s','--schedd',default=False, action='store_true')
+    parser.add_option('-a','--access_points',default=None)
     parser.add_option('-p','--port', default=9100,
                     action='store', type='int',
                     help='port number for prometheus exporter')
@@ -208,7 +208,7 @@ if __name__ == '__main__':
         while True:
             start = time.time()
             for collector in args:
-                query_collector(collector, metrics, last_job)
+                query_collector(collector, options.access_points,  metrics, last_job)
 
             delta = time.time() - start
             # sleep for interval minus scrape duration

@@ -84,7 +84,7 @@ es = Elasticsearch(hosts=[url],
 es_import = partial(bulk, es, max_retries=20, initial_backoff=10, max_backoff=3600)
 
 failed = False
-if options.access_points:
+if options.access_points and options.collectors:
     for coll_address in options.positionals:
         try:
             gen = es_generator(read_from_collector(coll_address, options.access_points))

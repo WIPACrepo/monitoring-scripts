@@ -774,8 +774,8 @@ def read_from_collector(address, access_points=None, history=False, constraint='
     coll = htcondor.Collector(address)
     schedd_ads = []
     if access_points:
-        for ap in access_points:
-            schedd_ads += coll.locate(htcondor.DaemonTypes.Schedd, ap)
+        for ap in access_points.split(','):
+            schedd_ads.append(coll.locate(htcondor.DaemonTypes.Schedd, ap))
     else:
         schedd_ads = coll.locateAll(htcondor.DaemonTypes.Schedd)
     for schedd_ad in schedd_ads:
