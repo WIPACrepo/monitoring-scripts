@@ -10,7 +10,7 @@ from condor_utils import *
 import prometheus_client
 from condor_metrics import *
 from itertools import chain
-from datetime import datetime
+from datetime import datetime, timezone
 from dateutil import parser as dateparser
 
 def get_job_state(ad):
@@ -33,7 +33,7 @@ def generate_ads(entries):
 def compose_ad_metrics(ads):
     for ad in ads:
 
-        walltime = int(ad['RequestCpus']) * (datetime.now(datetime.timezone.utc) - dateparser.parse(ad['JobCurrentStartDate'])).total_seconds()
+        walltime = int(ad['RequestCpus']) * (datetime.now(timezone.utc) - dateparser.parse(ad['JobCurrentStartDate'])).total_seconds()
         labels = {key: None for key in metrics.labels}
 
         labels['schedd'] = ad['GlobalJobId'].split('#')[0]
