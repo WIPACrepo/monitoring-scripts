@@ -18,34 +18,35 @@ def generate_ads(entries):
         add_classads(data)
         yield data
 
-def last_jobs_dict(collector):
+def last_jobs_dict(collector, access_points):
     last_job = defaultdict(dict)
 
     for collector in args:
-        schedd_ads = locate_schedds(collector)
+        schedd_ads = locate_schedds(collector, access_points)
         if schedd_ads is None:
             return None
-
         for s in schedd_ads:
             last_job[s.get('Name')] = {'ClusterId': None, 'EnteredCurrentStatus': None}
 
     return last_job
 
 
-def locate_schedds(collector, access_points):
+def locate_schedds(collector, access_points=None):
     coll = htcondor.Collector(collector)
     schedds = []
     if access_points:
         try:
             for ap in access_points:
+                logging.debug(f"getting {ap} schedd ad")
                 schedds.append(coll.locate(htcondor.DaemonTypes.Schedd, ap))
-        except htcondor.HTCondorIOError as e:
+        except Exception as e:
             logging.error(f'Condor error: {e}')
     else:
         try:
             schedds.append(coll.locateAll(htcondor.DaemonTypes.Schedd))
-        except htcondor.HTCondorIOError as e:
+        except Exception as e:
             logging.error(f'Condor error: {e}')
+    return schedds
 
 def compose_ad_metrics(ad, metrics):
     ''' Parse condor job classad and update metrics
@@ -120,7 +121,7 @@ def query_collector(collector, access_points, metrics, last_job):
         name = schedd_ad.get('Name')
 
         ads = read_from_schedd(schedd_ad, history=True, since=last_job[name]['ClusterId'])
-        iterate_ads(ads, name, metrics)
+        iterate_ads(ads, name, metrics, last_job)
 
 def read_from_schedd(schedd_ad, history=False, constraint='true', projection=[],match=10000,since=None):
         """Connect to schedd and pull ads directly.
@@ -170,8 +171,6 @@ def iterate_ads(ads, name, metrics, last_job):
         compose_ad_metrics(ad, metrics)
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s : %(message)s')
-
     parser = OptionParser('usage: %prog [options] history_files')
 
     parser.add_option('-c','--collectors',default=False, action='store_true',
@@ -186,9 +185,17 @@ if __name__ == '__main__':
     parser.add_option('-i','--interval', default=300,
                     action='store', type='int',
                     help='collector query interval in seconds')
+    parser.add_option('--debug', default=False, action='store_true')
     (options, args) = parser.parse_args()
     if not args:
         parser.error('no condor history files or collectors')
+
+    level = logging.INFO
+
+    if options.debug:
+        level = logging.DEBUG
+
+    logging.basicConfig(level=level, format='%(asctime)s %(levelname)s %(name)s : %(message)s')
 
     metrics = JobMetrics()
 
@@ -197,10 +204,12 @@ if __name__ == '__main__':
     prometheus_client.REGISTRY.unregister(prometheus_client.PROCESS_COLLECTOR)
 
     prometheus_client.start_http_server(options.port)
-
     if options.collectors:
-        last_job = last_jobs_dict(args)
-
+        if options.access_points:
+            aps = options.access_points.split(',')
+        else:
+            aps = None
+        last_job = last_jobs_dict(args, aps)
         if last_job is None:
             logging.error(f'No schedds found')
             exit()
@@ -208,7 +217,7 @@ if __name__ == '__main__':
         while True:
             start = time.time()
             for collector in args:
-                query_collector(collector, options.access_points,  metrics, last_job)
+                query_collector(collector, aps,  metrics, last_job)
 
             delta = time.time() - start
             # sleep for interval minus scrape duration

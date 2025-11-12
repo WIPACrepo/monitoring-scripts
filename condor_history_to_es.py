@@ -46,8 +46,7 @@ def es_generator(entries):
         if options.dailyindex:
             data['_index'] += '-'+(data['date'].split('T')[0].replace('-','.'))
         data['_id'] = data['GlobalJobId'].replace('#','-').replace('.','-')
-        data['run_interval']['gte'] = data['JobCurrentStartDate']
-        data['run_interval']['lte'] = data['EnteredCurrentStatus']
+        data['run_interval'] = {'gte': data['JobCurrentStartDate'], 'lte': data['EnteredCurrentStatus']}
         if not data['_id']:
             continue
         yield data

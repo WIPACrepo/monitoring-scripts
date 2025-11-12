@@ -33,7 +33,7 @@ def generate_ads(entries):
 def compose_ad_metrics(ads):
     for ad in ads:
 
-        walltime = int(ad['RequestCpus']) * (datetime.now(timezone.utc) - dateparser.parse(ad['JobCurrentStartDate'])).total_seconds()
+        walltime = int(ad['RequestCpus']) * (datetime.now() - dateparser.parse(ad['JobCurrentStartDate'])).total_seconds()
         labels = {key: None for key in metrics.labels}
 
         labels['schedd'] = ad['GlobalJobId'].split('#')[0]
