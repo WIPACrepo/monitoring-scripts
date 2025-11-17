@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from optparse import OptionParser
 import logging
-import htcondor
+import htcondor2 as htcondor
 from condor_utils import *
 from condor_job_metrics import JobMetrics
 import datetime
@@ -135,7 +135,7 @@ def read_from_schedd(schedd_ad, history=False, constraint='true', projection=[],
             match (int): number of job ads to return
             since (int): JobId to return job ads after
         """
-        import htcondor
+        import htcondor2 as htcondor
         logging.info('getting job ads from %s', schedd_ad['Name'])
         schedd = htcondor.Schedd(schedd_ad)
         try:

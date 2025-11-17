@@ -19,7 +19,7 @@ from elasticsearch import Elasticsearch
 from elasticsearch.helpers import bulk
 from elasticsearch_dsl import MultiSearch, Search
 from elasticsearch.helpers import bulk, BulkIndexError
-import htcondor
+import htcondor2 as htcondor
 from rest_tools.client import ClientCredentialsAuth
 
 from condor_utils import *

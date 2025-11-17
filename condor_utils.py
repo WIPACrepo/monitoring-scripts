@@ -13,7 +13,7 @@ except ImportError:
     from collections import Sequence
 import re
 
-import classad
+import classad2 as classad
 
 now = datetime.utcnow()
 zero = datetime.utcfromtimestamp(0).isoformat()
@@ -772,7 +772,7 @@ def read_from_collector(address, access_points=None, history=False, constraint='
         address (str): address of collector
         history (bool): read history (True) or active queue (default: False)
     """
-    import htcondor
+    import htcondor2 as htcondor
     coll = htcondor.Collector(address)
     schedd_ads = []
     if access_points:
@@ -807,7 +807,7 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
         address (str): address of collector
         history (bool): read history (True) or active queue (default: False)
     """
-    import htcondor
+    import htcondor2 as htcondor
     coll = htcondor.Collector(address)
     start_stamp = time.mktime(after.timetuple())
     final_keys = [

@@ -36,7 +36,7 @@ if not options.positionals:
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s : %(message)s')
 
-import htcondor
+import htcondor2 as htcondor
 from condor_utils import *
 
 def es_generator(entries):

@@ -5,7 +5,7 @@ import glob
 from optparse import OptionParser
 import logging
 from functools import partial
-import htcondor
+import htcondor2 as htcondor
 from condor_utils import *
 import prometheus_client
 from condor_metrics import *
