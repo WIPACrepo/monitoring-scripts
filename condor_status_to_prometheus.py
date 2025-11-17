@@ -92,7 +92,7 @@ if __name__ == '__main__':
             for coll_address in args:
                 try:
                     gens.append(read_from_collector(coll_address))
-                except htcondor.HTCondorIOError as e:
+                except htcondor.HTCondorException as e:
                     failed = e
                     logging.error('Condor error', exc_info=True)
             gen = chain(*gens)

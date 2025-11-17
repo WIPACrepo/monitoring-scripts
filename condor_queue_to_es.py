@@ -89,7 +89,7 @@ if options.access_points and options.collectors:
         try:
             gen = es_generator(read_from_collector(coll_address, options.access_points))
             success, _ = es_import(gen)
-        except htcondor.HTCondorIOError as e:
+        except htcondor.HTCondorException as e:
             failed = e
             logging.error('Condor error', exc_info=True)
 elif options.collectors:
@@ -97,7 +97,7 @@ elif options.collectors:
         try:
             gen = es_generator(read_from_collector(coll_address))
             success, _ = es_import(gen)
-        except htcondor.HTCondorIOError as e:
+        except htcondor.HTCondorException as e:
             failed = e
             logging.error('Condor error', exc_info=True)
 else:

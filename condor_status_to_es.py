@@ -416,7 +416,7 @@ if __name__ == "__main__":
             )
             success = es_import(gen, es)
 
-        except htcondor.HTCondorIOError as e:
+        except htcondor.HTCondorException as e:
             failed = e
             logging.error('Condor error', exc_info=True)
 
