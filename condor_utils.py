@@ -780,22 +780,27 @@ def read_from_collector(address, access_points=None, history=False, constraint='
             schedd_ads.append(coll.locate(htcondor.DaemonTypes.Schedd, ap))
     else:
         schedd_ads = coll.locateAll(htcondor.DaemonTypes.Schedd)
-    for schedd_ad in schedd_ads:
-        logging.info('getting job ads from %s', schedd_ad['Name'])
-        schedd = htcondor.Schedd(schedd_ad)
-        try:
-            i = 0
-            if history:
-                start_dt = datetime.now()-timedelta(minutes=10)
-                start_stamp = time.mktime(start_dt.timetuple())
-                gen = schedd.history('(EnteredCurrentStatus >= {0}) && ({1})'.format(start_stamp,constraint),projection,match=match)
-            else:
-                gen = schedd.query(constraint, projection)
-            for i,entry in enumerate(gen):
-                yield classad_to_dict(entry)
-            logging.info('got %d entries', i)
-        except Exception:
-            logging.info('%s failed', schedd_ad['Name'], exc_info=True)
+
+    if len(schedd_ads) == 0:
+        logging.error(f'unable to locate access points %s from central manager %s', access_points, address)
+        yield {}
+    else:
+        for schedd_ad in schedd_ads:
+            logging.info('getting job ads from %s', schedd_ad['Name'])
+            schedd = htcondor.Schedd(schedd_ad)
+            try:
+                i = 0
+                if history:
+                    start_dt = datetime.now()-timedelta(minutes=10)
+                    start_stamp = time.mktime(start_dt.timetuple())
+                    gen = schedd.history('(EnteredCurrentStatus >= {0}) && ({1})'.format(start_stamp,constraint),projection,match=match)
+                else:
+                    gen = schedd.query(constraint, projection)
+                for i,entry in enumerate(gen):
+                    yield classad_to_dict(entry)
+                logging.info('got %d entries', i)
+            except Exception:
+                logging.info('%s failed', schedd_ad['Name'], exc_info=True)
 
 
 def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1)):
