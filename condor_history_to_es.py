@@ -52,7 +52,7 @@ def es_generator(entries):
         yield data
 
 from elasticsearch import Elasticsearch
-from elasticsearch.helpers import bulk
+from elasticsearch.helpers import streaming_bulk
 
 prefix = 'http'
 address = options.address
@@ -85,8 +85,11 @@ def es_import(document_generator):
             json.dump(hit, sys.stdout)
         success = True
     else:
-        success, _ = bulk(es, document_generator, max_retries=20, initial_backoff=10, max_backoff=360)
-    return success
+        successes = 0
+        for success, _ = streaming_bulk(es, document_generator, max_retries=20, initial_backoff=10, max_backoff=360):
+            sucesses += success
+        print("Indexed %d/%d documents" % (successes))
+    return successes
 
 failed = False
 if options.access_points and options.collectors:
