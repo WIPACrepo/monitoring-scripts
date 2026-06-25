@@ -46,13 +46,15 @@ def es_generator(entries):
         if options.dailyindex:
             data['_index'] += '-'+(data['date'].split('T')[0].replace('-','.'))
         data['_id'] = data['GlobalJobId'].replace('#','-').replace('.','-')
-        data['run_interval'] = {'gte': data['JobCurrentStartDate'], 'lte': data['EnteredCurrentStatus']}
+        if data['JobStatus'] == 4:
+            data['run_interval'] = {'gte': data['JobCurrentStartDate'], 'lte': data['EnteredCurrentStatus']}
         if not data['_id']:
             continue
         yield data
 
 from elasticsearch import Elasticsearch
-from elasticsearch.helpers import bulk
+from elasticsearch.helpers import BulkIndexError
+from elasticsearch.helpers import streaming_bulk
 
 prefix = 'http'
 address = options.address
@@ -75,7 +77,7 @@ logging.info('connecting to ES at %s',url)
 es = Elasticsearch(hosts=[url],
                    request_timeout=5000,
                    bearer_auth=token,
-                   sniff_on_connection_fail=True)
+                   sniff_on_node_failure=True)
 
 def es_import(document_generator):
     if options.dry_run:
@@ -85,8 +87,16 @@ def es_import(document_generator):
             json.dump(hit, sys.stdout)
         success = True
     else:
-        success, _ = bulk(es, document_generator, max_retries=20, initial_backoff=10, max_backoff=360)
-    return success
+        successes = 0
+        try:
+            for success, _ in streaming_bulk(es, document_generator, max_retries=20, initial_backoff=10, max_backoff=360):
+                successes += success
+        except BulkIndexError as e:
+            for error in e.errors:
+                print(error)
+
+        print(f"Indexed {successes} documents")
+    return successes
 
 failed = False
 if options.access_points and options.collectors:
