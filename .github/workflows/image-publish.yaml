@@ -1,0 +1,32 @@
+name: harbor release
+
+on:
+  # only on tag pushes
+  push:
+    branches-ignore:
+      - '**'
+    tags:
+      - '**'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'the tag to publish and possibly overwrite'
+        default: 'dev'
+        required: false
+
+jobs:
+  image-publish:
+    uses: WIPACrepo/wipac-dev-workflows/.github/workflows/image-publish.yml@v1.27
+    permissions: # for GITHUB_TOKEN
+      packages: write
+    with:
+      image_registry: harbor.icecube.aq
+      image_namespace: wipac
+      image_name: monitoring-scripts
+      mode: 'BUILD'
+      build_platforms_csv: linux/amd64
+      free_disk_space: true
+      extra_build_tag: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || 'test' }}
+    secrets:
+      registry_username: ${{ secrets.HARBOR_USERNAME }}
+      registry_token: ${{ secrets.HARBOR_PASSWORD }}
