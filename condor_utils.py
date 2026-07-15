@@ -465,6 +465,8 @@ gpu_ns_photon = OrderedDict([
     ('titan rtx', 4.67),
     ('h100', 1.34),
     ('h100 1g.10GB', 9.38),
+    ('h100 2g.20GB', 4.69), #this is theoretical
+    ('h100 3g.30GB', 3.12), #this is theoretical
     ('k20', 33.01), # not recently tested
     ('k40', 29.67), # not recently tested
     ('k80', 29.7),
