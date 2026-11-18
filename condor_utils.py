@@ -364,7 +364,11 @@ site_names = {
     'Lonestar6': 'US-LCC-Lonestar6',
     'Purdue Anvil': 'US-XSEDE-Anvil',
     'NCSA Delta': 'US-XSEDE-Delta',
+    'NCSA-Delta': 'US-XSEDE-Delta',
     'Stampede3': 'US-XSEDE-TACC',
+    'TACC Stampede3': 'US-XSEDE-TACC',
+    'IU Jetstream 2': 'US-Jetstream2',
+    'Fir': 'CA-Fir',
     "UofU Kingspeak": "US-Utah",
     "UofU Lonepeak": "US-Utah",
     "UofU Notchpeak": "US-Utah",
@@ -805,22 +809,33 @@ def read_from_collector(address, access_points=None, history=False, constraint='
                 logging.info('%s failed', schedd_ad['Name'], exc_info=True)
 
 
-def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1)):
-    """Connect to condor collectors and schedds to pull job ads directly.
+def read_status_from_collector(address, lookback=timedelta(hours=1),
+                               slot_constraint=None,
+                               raise_on_error=False):
+    """Connect to a condor collector to pull startd ads.
 
-    A generator that yields condor job dicts.
+    A generator that yields machine classad dicts.
 
     Args:
         address (str): address of collector
-        history (bool): read history (True) or active queue (default: False)
+        lookback (timedelta): how far back to look for ads, relative to now. resolved
+            per call rather than at import, so a long-running process keeps moving.
+        slot_constraint (str): classad expression selecting slots. pass None to get every slot.
+        raise_on_error (bool): re-raise a failed collector query instead of yielding nothing.
     """
     import htcondor2 as htcondor
     coll = htcondor.Collector(address)
-    start_stamp = time.mktime(after.timetuple())
+    start_stamp = time.mktime((datetime.now() - lookback).timetuple())
     final_keys = [
         "Name",
         "DaemonStartTime",
         "LastHeardFrom",
+        "SlotType",
+        "State",
+        "Activity",
+        "Cpus",
+        "Memory",
+        "GPUs",
         "TotalCpus",
         "TotalDisk",
         "TotalMemory",
@@ -835,17 +850,25 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
         "GPU_NAMES",
     ]
     site_key = "GLIDEIN_SiteResource"
+    constraints = []
+    if slot_constraint:
+        constraints.append("({})".format(slot_constraint))
+    constraints.append("LastHeardFrom>={}".format(start_stamp))
     try:
         gen = coll.query(
             htcondor.AdTypes.Startd,
-            (
-                "SlotType isnt \"Dynamic\" && LastHeardFrom>={}"
-                .format(start_stamp)
-            ),
+            " && ".join(constraints),
             final_keys + temp_keys
         )
-        i = 0
-        for i,entry in enumerate(gen):
+    except Exception:
+        logging.info('failed', exc_info=True)
+        if raise_on_error:
+            raise
+        return
+
+    i = 0
+    for i,entry in enumerate(gen):
+        try:
             data = classad_to_dict(entry)
             for k in "DaemonStartTime", "LastHeardFrom":
                 data[k] = datetime.utcfromtimestamp(data[k])
@@ -886,7 +909,9 @@ def read_status_from_collector(address, after=datetime.now()-timedelta(hours=1))
             for k in temp_keys:
                 if k in data:
                     del data[k]
-            yield data
-        logging.info('got %d entries', i)
-    except Exception:
-        logging.info('failed', exc_info=True)
+        except Exception:
+            # one bad ad must not truncate the rest of the pool
+            logging.info('skipping ad %d', i, exc_info=True)
+            continue
+        yield data
+    logging.info('got %d status entries', i)

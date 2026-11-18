@@ -365,7 +365,7 @@ if __name__ == "__main__":
     for coll_address in options.collectors:
         try:
             gen = update_machines(
-                read_status_from_collector(coll_address, datetime.now() - options.after)
+                read_status_from_collector(coll_address, options.after, slot_constraint='SlotType isnt "Dynamic"')
             )
             success = es_import(gen, es)
 

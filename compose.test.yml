@@ -1,0 +1,20 @@
+# for local testing convenience only, not for deployment.
+#
+# usage:
+#   docker compose -f compose.test.yml up --build
+#   curl -s localhost:9100/metrics
+
+services:
+  status:
+    build: .
+    ports:
+      - "9100:9100"
+    command:
+      - python3
+      - condor_status_to_prometheus.py
+      - --collector
+      - glidein:glidein-cm.icecube.wisc.edu
+      - -i
+      - "60"
+      - -p
+      - "9100"

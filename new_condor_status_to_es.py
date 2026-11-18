@@ -174,7 +174,7 @@ def main(options):
     
     for coll_address in options.collectors:
         try:
-            machines = read_status_from_collector(coll_address, datetime.now() - options.after),
+            machines = read_status_from_collector(coll_address, options.after, slot_constraint='SlotType isnt "Dynamic"'),
 
             # Update claims from evicted and held jobs
             after = time.mktime((datetime.now() - timedelta(minutes=10)).timetuple())
