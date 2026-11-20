@@ -3,6 +3,12 @@
 # usage:
 #   docker compose -f compose.test.yml up --build
 #   curl -s localhost:9100/metrics
+#
+# dry-run one pool at a time to keep the output readable, e.g.:
+#   docker compose -f compose.test.yml run --rm status \
+#     python3 condor_status_to_prometheus.py --dry-run \
+#     --collector osg:cm-1.ospool.osg-htc.org \
+#     --constraint 'osg:regexp("icecube",GLIDECLIENT_Group,"i")'
 
 services:
   status:
@@ -14,6 +20,18 @@ services:
       - condor_status_to_prometheus.py
       - --collector
       - glidein:glidein-cm.icecube.wisc.edu
+      - --collector
+      - npx:cm-el9.icecube.wisc.edu
+      - --collector
+      - osg-dedicated:cm-1.ospool.osg-htc.org
+      - --constraint
+      - 'osg-dedicated:regexp("icecube",GLIDECLIENT_Group,"i")'
+      - --collector
+      - osg-shared:cm-1.ospool.osg-htc.org
+      - --constraint
+      - 'osg-shared:SlotType=="Dynamic" && regexp("icecube",RemoteOwner) && !regexp("icecube",GLIDECLIENT_Group,"i")'
+      - --collector
+      - chtc:cm.chtc.wisc.edu
       - -i
       - "60"
       - -p

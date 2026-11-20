@@ -4,20 +4,27 @@
 per slot type, `Cpus`, `Memory` and `GPUs` mean different things:
     partitionable          how much is REMAINING for new claims
     dynamic                how much that claim HOLDS
+    static                 the slot's whole size, in use or not
 
 so:
     partitionable slots    -> unclaimed (remaining) and stranded
     dynamic slots          -> claimed (held)
+    static slots           -> claimed when busy, unclaimed otherwise, never stranded
 
-labels come from the same slot as the numbers, 
+static slots are indivisible: condor reports `Cpus` equal to `TotalSlotCpus` whether a
+job is running or not, so there is no leftover to measure and no claim to carve. a
+static slot with spare cores inside it cannot host anything else, which makes counting
+it as fully claimed correct for capacity purposes.
+
+labels come from the same slot as the numbers,
 so `claimed` carries the dynamic slot's own state and activity, not the partitionable slot's.
 
 to estimate capacity nobody can use, we're assuming a claim needs at least 4 GiB of memory per core:
     pairable = min(remaining_cpus, remaining_memory // 4 GiB)
     stranded = remaining - pairable
 
-this likely still underestimates unusable capacity because most jobs ask for more. 
-but 4 GiB seems like a reasonable lower bound since most clusters have harware with ~4GiB of RAM per core.
+this likely still underestimates unusable capacity because most jobs ask for more.
+but 4 GiB seems like a reasonable lower bound since most clusters have hardware with ~4GiB of RAM per core.
 """
 
 from typing import NamedTuple
@@ -35,17 +42,20 @@ class SlotKey(NamedTuple):
     type: str
 
 
-# every label in exposition order, for the slot count metric
-SLOT_LABELS = SlotKey._fields
-# capacity measures cover both slot types, so their label set omits type
-LABELS = tuple(name for name in SLOT_LABELS if name != "type")
+# every label in exposition order. `type` is part of it because partitionable and
+# static slots both report unclaimed capacity, so without it their series would
+# collide on identical label sets.
+LABELS = SlotKey._fields
 
 
 def slot_type(ad):
-    """SlotType is only set for partitionable and dynamic slots. 
-    static slots have no such attribute, so defaulting to static if nothing is given.
-    """
+    """SlotType getter. falls back to Static if missing """
     return ad.get("SlotType") or "Static"
+
+
+def state_of(ad):
+    """the ad's State, lowercased the same way the label uses it."""
+    return (ad.get("State") or "unknown").lower()
 
 
 def label_values(pool, ad):
@@ -53,7 +63,7 @@ def label_values(pool, ad):
     return {
         "pool": pool,
         "site": ad.get("site", "unknown"),
-        "state": (ad.get("State") or "unknown").lower(),
+        "state": state_of(ad),
         "activity": (ad.get("Activity") or "unknown").lower(),
     }
 
@@ -84,12 +94,27 @@ def held(ad):
         "gpus_claimed": ad.get("GPUs") or 0,
     }
 
+def static(ad):
+    """a static slot's resources, as claimed or unclaimed.
+
+    no stranded: a static slot is handed out whole, so there is no claim to carve and
+    the core/memory pairing does not describe anything.
+    """
+    if state_of(ad) in ("claimed", "preempting"):
+        return held(ad)
+    return {
+        "cores_unclaimed": ad.get("Cpus") or 0,
+        "memory_unclaimed_bytes": (ad.get("Memory") or 0) * MiB,
+        "gpus_unclaimed": ad.get("GPUs") or 0,
+    }
+
 
 def summarize(slots):
     """[(pool, ad), ...] -> {SlotKey: {measure: value}}.
 
-    partitionable slots give unclaimed and stranded, dynamic slots give claimed. 
-    static slots are counted but contribute no capacity, since we do not run any for glideins.
+    partitionable slots give unclaimed and stranded. dynamic slots give claimed.
+    static slots are indivisible: claimed when in use, unclaimed when not, 
+    and never stranded, since there is no claim to carve and no core/memory pairing to make.
     """
     out = {}
 
@@ -99,6 +124,8 @@ def summarize(slots):
             values = remaining(ad)
         elif kind == "dynamic":
             values = held(ad)
+        elif kind == "static":
+            values = static(ad)
         else:
             values = {}
 

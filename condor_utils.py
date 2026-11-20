@@ -877,8 +877,11 @@ def read_status_from_collector(address, lookback=timedelta(hours=1),
                 data["@timestamp"].append(data["LastHeardFrom"])
             data["duration"] = int((data["LastHeardFrom"]-data["DaemonStartTime"]).total_seconds())
             # Pick up resource names from OSG glideins (GLIDEIN_SiteResource) and pyglidein (usually GLIDEIN_ResourceName="ResourceName")
+            # 'ResourceName' here is a sentinel for "no resource attribute at all": 
+            # a non-glidein ad on a plain pool has neither, 
+            # so fall back to an empty string and let the site lookup below take over.
             if data.get(site_key, 'ResourceName') == 'ResourceName':
-                data[site_key] = data['GLIDEIN_Site']
+                data[site_key] = data.get('GLIDEIN_Site', '')
             data['resource'] = data[site_key]
 
             # add site
