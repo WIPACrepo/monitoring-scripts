@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""Serve glidein capacity as prometheus metrics.
+"""Serve condor slot capacity as prometheus metrics.
+
+one process can scrape several pools. 
+each `--collector name:address` names a pool, and an optional `--constraint name:expression` narrows it, 
+which is how a shared pool is reduced to the capacity we control. e.g.:
+
+    condor_status_to_prometheus.py \
+        --collector glidein:glidein-cm.icecube.wisc.edu \
+        --collector osg-dedicated:cm-1.ospool.osg-htc.org \
+        --constraint 'osg-dedicated:regexp("icecube",GLIDECLIENT_Group,"i")'
+
+and to check the outputs:
+    curl -s localhost:9100/metrics
 
 the gauges are read at scrape time from a snapshot dict, which the refresh loop swaps in whole under a lock. 
 nothing is cleared and repopulated in place, so a scrape cannot land mid-refresh and see a partial pool.
-
-usage:
-    condor_status_to_prometheus.py --collector grid:glidein-cm.icecube.wisc.edu
-    curl -s localhost:9100/metrics
 """
 
 import logging
@@ -18,18 +26,18 @@ import prometheus_client
 from prometheus_client.core import GaugeMetricFamily
 from prometheus_client import Gauge
 
-from condor_capacity import LABELS, SLOT_LABELS, summarize
+from condor_capacity import LABELS, summarize
 from condor_utils import read_status_from_collector
 
 HELP = {
-    "cores_unclaimed": "Cores free on partitionable slots. (to get approximate usable capacity subtract cores_stranded)",
-    "cores_claimed": "Cores held by dynamic slots",
+    "cores_unclaimed": "Cores free on partitionable and static slots. (to get approximate usable capacity subtract cores_stranded)",
+    "cores_claimed": "Cores held by dynamic slots and claimed static slots",
     "cores_stranded": "Cores on partitionable slots that remaining memory cannot back at 4 GiB per core",
-    "memory_unclaimed_bytes": "Memory free on partitionable slots",
-    "memory_claimed_bytes": "Memory held by dynamic slots",
+    "memory_unclaimed_bytes": "Memory free on partitionable and static slots",
+    "memory_claimed_bytes": "Memory held by dynamic slots and claimed static slots",
     "memory_stranded_bytes": "Memory on partitionable slots that remaining cores cannot use at 4 GiB per core",
-    "gpus_unclaimed": "Gpus free on partitionable slots",
-    "gpus_claimed": "Gpus held by dynamic slots",
+    "gpus_unclaimed": "Gpus free on partitionable and static slots",
+    "gpus_claimed": "Gpus held by dynamic slots and claimed static slots",
     "gpus_stranded": "Gpus on partitionable slots with no remaining core left to drive them",
 }
 
@@ -57,23 +65,45 @@ def parse_collectors(specs):
     return pairs
 
 
-def fetch(pairs):
+def parse_constraints(specs):
+    """[name:expression, ...] -> {name: expression}."""
+    constraints = {}
+    for spec in specs or ():
+        name, sep, expression = spec.partition(":")
+        if not sep or not name or not expression:
+            raise ValueError(f"expected name:expression, got {spec!r}")
+        constraints[name] = expression
+    return constraints
+
+
+def fetch(pairs, constraints):
     """[(pool, ad), ...] and the set of pools that answered.
 
     a pool that raises is left out of both, so the caller can keep its previous
     numbers rather than publishing an empty pool as if it were real.
+
+    `constraints` maps pool name to a condor expression, 
+    so a shared pool can be narrowed to the capacity we actually control. 
+    pools without an entry are queried unfiltered.
     """
     ads = []
     ok = set()
     for pool, address in pairs:
-        logging.info("querying %s (%s)", pool, address)
+        constraint = constraints.get(pool)
+        logging.info("querying %s (%s)%s", pool, address,
+                     f" [{constraint}]" if constraint else "")
         try:
             found = list(read_status_from_collector(address,
-                                                    slot_constraint=None,
+                                                    slot_constraint=constraint,
                                                     raise_on_error=True))
         except Exception:
             logging.exception("%s: query failed, keeping previous values", pool)
             continue
+        if not found:
+            # a successful query returning nothing is likely a broken constraint
+            # rather than an empty pool, and the freshness gauge cannot tell them apart.
+            logging.warning("%s: query returned no ads%s", pool,
+                            f" for constraint {constraint}" if constraint else "")
         logging.info("%s: %d ads", pool, len(found))
         ads.extend((pool, ad) for ad in found)
         ok.add(pool)
@@ -106,27 +136,26 @@ class SnapshotCollector:
             f"condor_capacity_{name}", HELP[name], labels=list(LABELS))
             for name in MEASURES}
         slots = GaugeMetricFamily(
-            "condor_capacity_slots", "Glidein slots advertised to the collector",
-            labels=list(SLOT_LABELS))
+            "condor_capacity_slots", "Slots advertised to the collector",
+            labels=list(LABELS))
 
         for key, values in snapshot.items():
             labels = [getattr(key, name) for name in LABELS]
             for name, family in by_measure.items():
                 if name in values:
                     family.add_metric(labels, values[name])
-            slots.add_metric([getattr(key, name) for name in SLOT_LABELS],
-                             values.get("slots", 0))
+            slots.add_metric(labels, values.get("slots", 0))
 
         yield from by_measure.values()
         yield slots
 
 
-def refresh(collector, pairs, interval):
+def refresh(collector, pairs, constraints, interval):
     """query, summarize, swap. runs until the process exits."""
     while True:
         start = time.time()
         try:
-            ads, ok = fetch(pairs)
+            ads, ok = fetch(pairs, constraints)
             snapshot = summarize(ads)
             collector.replace(snapshot, ok)
         except Exception:
@@ -135,6 +164,11 @@ def refresh(collector, pairs, interval):
             now = time.time()
             for pool in ok:
                 LAST_SUCCESS.labels(pool=pool).set(now)
+            # one snapshot entry per label set, so a collision here means prometheus
+            # would reject the scrape as duplicate series. summarize keys on SlotKey,
+            # so this only fires if SlotKey stops covering something that varies.
+            if len({(k.pool, k.site, k.state, k.activity, k.type) for k in snapshot}) != len(snapshot):
+                logging.warning("snapshot has duplicate label sets, scrape may be rejected")
             logging.info("refreshed %d of %d pool(s), %d label set(s), %.0fs",
                          len(ok), len(pairs), len(snapshot), now - start)
 
@@ -166,6 +200,13 @@ def main():
         help="query once, print the result, do not serve metrics",
     )
     parser.add_option(
+        "--constraint",
+        action="append",
+        dest="constraints",
+        metavar="NAME:EXPRESSION",
+        help="condor expression to narrow one pool, repeatable. pools without one are queried unfiltered"
+    )
+    parser.add_option(
         "-v", "--verbose", default=False, action="store_true",
         help="debug logging",
     )
@@ -179,9 +220,14 @@ def main():
     if not options.collectors:
         parser.error("at least one --collector is required")
     pairs = parse_collectors(options.collectors)
+    constraints = parse_constraints(options.constraints)
+
+    unknown = set(constraints) - {pool for pool, _address in pairs}
+    if unknown:
+        parser.error(f"--constraint for unknown pool(s): {', '.join(sorted(unknown))}")
 
     if options.dry_run:
-        ads, ok = fetch(pairs)
+        ads, ok = fetch(pairs, constraints)
         logging.info("answered: %s", ", ".join(sorted(ok)) or "none")
         for key, values in sorted(summarize(ads).items()):
             measures = " ".join(f"{k}={v:.0f}" for k, v in sorted(values.items()))
@@ -201,7 +247,7 @@ def main():
     prometheus_client.start_http_server(options.port)
     logging.info("serving /metrics on port %d", options.port)
 
-    refresh(collector, pairs, options.interval)
+    refresh(collector, pairs, constraints, options.interval)
 
 
 if __name__ == "__main__":
