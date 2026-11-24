@@ -35,6 +35,7 @@ HELP = {
     "cores_stranded": "Cores on partitionable slots that remaining memory cannot back at 4 GiB per core",
     "memory_unclaimed_bytes": "Memory free on partitionable and static slots",
     "memory_claimed_bytes": "Memory held by dynamic slots and claimed static slots",
+    "memory_used_bytes": "Peak memory actually used by the job in a dynamic or busy static slot. absent until the starter reports it",
     "memory_stranded_bytes": "Memory on partitionable slots that remaining cores cannot use at 4 GiB per core",
     "gpus_unclaimed": "Gpus free on partitionable and static slots",
     "gpus_claimed": "Gpus held by dynamic slots and claimed static slots",

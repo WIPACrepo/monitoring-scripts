@@ -32,6 +32,8 @@ services:
       - 'osg-shared:SlotType=="Dynamic" && regexp("icecube",RemoteOwner) && !regexp("icecube",GLIDECLIENT_Group,"i")'
       - --collector
       - chtc:cm.chtc.wisc.edu
+      - --constraint
+      - 'chtc:regexp("icecube",RemoteOwner)'
       - -i
       - "60"
       - -p

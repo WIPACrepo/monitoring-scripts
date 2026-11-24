@@ -87,12 +87,20 @@ def remaining(ad):
 
 
 def held(ad):
-    """a dynamic slot's claimed resources."""
-    return {
+    """a dynamic slot's claimed resources, and how much of its memory is in use.
+
+    MemoryUsage is the job's peak usage in MB, reported by the starter. a slot that has
+    only just started a job has no job attributes yet, so it is absent for a minute or
+    two: absent means no used figure at all, so sums cover only measured slots.
+    """
+    values = {
         "cores_claimed": ad.get("Cpus") or 0,
         "memory_claimed_bytes": (ad.get("Memory") or 0) * MiB,
         "gpus_claimed": ad.get("GPUs") or 0,
     }
+    if ad.get("MemoryUsage") is not None:
+        values["memory_used_bytes"] = ad["MemoryUsage"] * MiB
+    return values
 
 def static(ad):
     """a static slot's resources, as claimed or unclaimed.
@@ -131,10 +139,12 @@ def summarize(slots):
 
         labels = label_values(pool, ad)
         key = SlotKey(type=kind, **labels)
-        acc = out.setdefault(key, dict.fromkeys(values, 0.0))
+        acc = out.setdefault(key, {})
         acc["slots"] = acc.get("slots", 0) + 1
 
+        # accumulated lazily rather than seeded from the first ad, since a measure can be
+        # present on some ads in a bucket and absent on others
         for name, value in values.items():
-            acc[name] += value
+            acc[name] = acc.get(name, 0.0) + value
 
     return out
