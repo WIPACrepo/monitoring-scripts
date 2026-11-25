@@ -77,6 +77,21 @@ def parse_constraints(specs):
     return constraints
 
 
+def parse_ours(specs):
+    """[name:value, ...] -> {name: value}.
+
+    value is matched case-insensitively against RemoteOwner to decide a slot's tenant.
+    '*' means every slot on that collector is ours, which is what a pool we own passes.
+    """
+    ours = {}
+    for spec in specs or ():
+        name, sep, value = spec.partition(":")
+        if not sep or not name or not value:
+            raise ValueError(f"expected name:value, got {spec!r}")
+        ours[name] = value.lower()
+    return ours
+
+
 def fetch(pairs, constraints):
     """[(pool, ad), ...] and the set of pools that answered.
 
@@ -151,13 +166,13 @@ class SnapshotCollector:
         yield slots
 
 
-def refresh(collector, pairs, constraints, interval):
+def refresh(collector, pairs, constraints, ours, interval):
     """query, summarize, swap. runs until the process exits."""
     while True:
         start = time.time()
         try:
             ads, ok = fetch(pairs, constraints)
-            snapshot = summarize(ads)
+            snapshot = summarize(ads, ours)
             collector.replace(snapshot, ok)
         except Exception:
             logging.exception("refresh failed, keeping the previous snapshot")
@@ -166,9 +181,10 @@ def refresh(collector, pairs, constraints, interval):
             for pool in ok:
                 LAST_SUCCESS.labels(pool=pool).set(now)
             # one snapshot entry per label set, so a collision here means prometheus
-            # would reject the scrape as duplicate series. summarize keys on SlotKey,
-            # so this only fires if SlotKey stops covering something that varies.
-            if len({(k.pool, k.site, k.state, k.activity, k.type) for k in snapshot}) != len(snapshot):
+            # would reject the scrape as duplicate series. 
+            # this fires if LABELS ever stops covering everything SlotKey varies on.
+            emitted = {tuple(getattr(k, name) for name in LABELS) for k in snapshot}
+            if len(emitted) != len(snapshot):
                 logging.warning("snapshot has duplicate label sets, scrape may be rejected")
             logging.info("refreshed %d of %d pool(s), %d label set(s), %.0fs",
                          len(ok), len(pairs), len(snapshot), now - start)
@@ -208,6 +224,13 @@ def main():
         help="condor expression to narrow one pool, repeatable. pools without one are queried unfiltered"
     )
     parser.add_option(
+        "--ours",
+        action="append",
+        dest="ours",
+        metavar="NAME:VALUE",
+        help="what makes a slot ours, lowercased and matched against RemoteOwner. repeatable. defaults to '*' (the whole pool is ours)."
+    )
+    parser.add_option(
         "-v", "--verbose", default=False, action="store_true",
         help="debug logging",
     )
@@ -222,18 +245,23 @@ def main():
         parser.error("at least one --collector is required")
     pairs = parse_collectors(options.collectors)
     constraints = parse_constraints(options.constraints)
+    ours = parse_ours(options.ours)
 
-    unknown = set(constraints) - {pool for pool, _address in pairs}
+    unknown = (set(constraints) | set(ours)) - {pool for pool, _address in pairs}
     if unknown:
-        parser.error(f"--constraint for unknown pool(s): {', '.join(sorted(unknown))}")
+        parser.error(f"flag for unknown pool(s): {', '.join(sorted(unknown))}")
+
+    # a pool with no --ours is wholly ours
+    for pool, _address in pairs:
+        ours.setdefault(pool, "*")
 
     if options.dry_run:
         ads, ok = fetch(pairs, constraints)
         logging.info("answered: %s", ", ".join(sorted(ok)) or "none")
-        for key, values in sorted(summarize(ads).items()):
+        for key, values in sorted(summarize(ads, ours).items()):
             measures = " ".join(f"{k}={v:.0f}" for k, v in sorted(values.items()))
-            print(f"{key.pool:<6} {key.site:<16} {key.type:<12} {key.state:<10} "
-                  f"{key.activity:<12} {measures}")
+            print(f"{key.pool:<14} {key.site:<16} {key.type:<12} {key.tenant:<8} "
+                  f"{key.state:<10} {key.activity:<12} {measures}")
         return
 
     prometheus_client.REGISTRY.unregister(prometheus_client.GC_COLLECTOR)
@@ -248,7 +276,7 @@ def main():
     prometheus_client.start_http_server(options.port)
     logging.info("serving /metrics on port %d", options.port)
 
-    refresh(collector, pairs, constraints, options.interval)
+    refresh(collector, pairs, constraints, ours, options.interval)
 
 
 if __name__ == "__main__":

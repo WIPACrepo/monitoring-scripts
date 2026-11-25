@@ -845,6 +845,7 @@ def read_status_from_collector(address, lookback=timedelta(hours=1),
         "OpSysAndVer",
         "GLIDEIN_Site",
         "GLIDEIN_SiteResource",
+        "RemoteOwner",
     ]
     temp_keys = [
         "AddressV1",

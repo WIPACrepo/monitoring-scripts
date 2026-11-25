@@ -40,6 +40,7 @@ class SlotKey(NamedTuple):
     state: str
     activity: str
     type: str
+    tenant: str
 
 
 # every label in exposition order. `type` is part of it because partitionable and
@@ -58,13 +59,28 @@ def state_of(ad):
     return (ad.get("State") or "unknown").lower()
 
 
-def label_values(pool, ad):
+def tenant_of(ad, ours):
+    """icecube for slots we hold, shared for the rest.
+
+    `ours` comes from the collector's --ours flag. 
+    '*' matches every slot, which is what a pool that is wholly ours passes. 
+    otherwise only a dynamic or static slot whose RemoteOwner contains the value counts. 
+    partitionable slots have no RemoteOwner at all so are always shared unless ours is set to *.
+    """
+    if ours == "*":
+        return "icecube"
+    owner = (ad.get("RemoteOwner") or "").lower()
+    return "icecube" if ours in owner else "shared"
+
+
+def label_values(pool, ad, ours):
     """the label set for one ad, no aggregation."""
     return {
         "pool": pool,
         "site": ad.get("site", "unknown"),
         "state": state_of(ad),
         "activity": (ad.get("Activity") or "unknown").lower(),
+        "tenant": tenant_of(ad, ours),
     }
 
 
@@ -117,8 +133,8 @@ def static(ad):
     }
 
 
-def summarize(slots):
-    """[(pool, ad), ...] -> {SlotKey: {measure: value}}.
+def summarize(slots, ours):
+    """[(pool, ad), ...] and {pool: ours pattern} -> {SlotKey: {measure: value}}.
 
     partitionable slots give unclaimed and stranded. dynamic slots give claimed.
     static slots are indivisible: claimed when in use, unclaimed when not, 
@@ -137,7 +153,7 @@ def summarize(slots):
         else:
             values = {}
 
-        labels = label_values(pool, ad)
+        labels = label_values(pool, ad, ours.get(pool, "*"))
         key = SlotKey(type=kind, **labels)
         acc = out.setdefault(key, {})
         acc["slots"] = acc.get("slots", 0) + 1
