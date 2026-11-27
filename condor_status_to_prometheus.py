@@ -21,6 +21,7 @@ import logging
 import threading
 import time
 from optparse import OptionParser
+from typing import NamedTuple
 
 import prometheus_client
 from prometheus_client.core import GaugeMetricFamily
@@ -35,6 +36,7 @@ HELP = {
     "cores_stranded": "Cores on partitionable slots that remaining memory cannot back at 4 GiB per core",
     "memory_unclaimed_bytes": "Memory free on partitionable and static slots",
     "memory_claimed_bytes": "Memory held by dynamic slots and claimed static slots",
+    "memory_used_bytes": "Peak memory actually used by the job in a dynamic or busy static slot. absent until the starter reports it",
     "memory_stranded_bytes": "Memory on partitionable slots that remaining cores cannot use at 4 GiB per core",
     "gpus_unclaimed": "Gpus free on partitionable and static slots",
     "gpus_claimed": "Gpus held by dynamic slots and claimed static slots",
@@ -54,59 +56,80 @@ LAST_SUCCESS = Gauge(
 )
 
 
-def parse_collectors(specs):
-    """[name:address, ...] -> [(name, address), ...], failing loud on bad input."""
-    pairs = []
-    for spec in specs:
+class Pool(NamedTuple):
+    """one pool to scrape: which collector answers for it, and how to read its ads."""
+
+    name: str
+    address: str
+    constraint: str | None = None
+    ours: str = "*"
+
+
+def parse_specs(collectors, constraints, ours):
+    """--collector, --constraint and --ours -> [Pool, ...].
+
+    each flag takes name:value and is matched to the collector of the same name. 
+    a collector without an --ours flag is wholly ours, which is true of every pool we fully own. 
+    a --constraint or --ours naming an unknown collector will error loudly.
+    """
+    pools = []
+    for spec in collectors:
         name, sep, address = spec.partition(":")
         if not sep or not name or not address:
             raise ValueError(f"expected name:address, got {spec!r}")
-        pairs.append((name, address))
-    return pairs
+        pools.append(Pool(name, address))
+
+    names = {pool.name for pool in pools}
+    if len(names) != len(pools):
+        raise ValueError("duplicate --collector name")
+
+    def by_name(specs, what):
+        values = {}
+        for spec in specs or ():
+            name, sep, value = spec.partition(":")
+            if not sep or not name or not value:
+                raise ValueError(f"expected name:{what}, got {spec!r}")
+            if name not in names:
+                raise ValueError(f"{what} for unknown collector {name!r}")
+            values[name] = value
+        return values
+
+    constraint_by_name = by_name(constraints, "expression")
+    ours_by_name = by_name(ours, "value")
+
+    return [
+        pool._replace(constraint=constraint_by_name.get(pool.name),
+                      ours=ours_by_name.get(pool.name, "*").lower())
+        for pool in pools
+    ]
 
 
-def parse_constraints(specs):
-    """[name:expression, ...] -> {name: expression}."""
-    constraints = {}
-    for spec in specs or ():
-        name, sep, expression = spec.partition(":")
-        if not sep or not name or not expression:
-            raise ValueError(f"expected name:expression, got {spec!r}")
-        constraints[name] = expression
-    return constraints
-
-
-def fetch(pairs, constraints):
+def fetch(pools):
     """[(pool, ad), ...] and the set of pools that answered.
 
     a pool that raises is left out of both, so the caller can keep its previous
     numbers rather than publishing an empty pool as if it were real.
-
-    `constraints` maps pool name to a condor expression, 
-    so a shared pool can be narrowed to the capacity we actually control. 
-    pools without an entry are queried unfiltered.
     """
     ads = []
     ok = set()
-    for pool, address in pairs:
-        constraint = constraints.get(pool)
-        logging.info("querying %s (%s)%s", pool, address,
-                     f" [{constraint}]" if constraint else "")
+    for pool in pools:
+        logging.info("querying %s (%s)%s", pool.name, pool.address,
+                     f" [{pool.constraint}]" if pool.constraint else "")
         try:
-            found = list(read_status_from_collector(address,
-                                                    slot_constraint=constraint,
+            found = list(read_status_from_collector(pool.address,
+                                                    slot_constraint=pool.constraint,
                                                     raise_on_error=True))
         except Exception:
-            logging.exception("%s: query failed, keeping previous values", pool)
+            logging.exception("%s: query failed, keeping previous values", pool.name)
             continue
         if not found:
             # a successful query returning nothing is likely a broken constraint
             # rather than an empty pool, and the freshness gauge cannot tell them apart.
-            logging.warning("%s: query returned no ads%s", pool,
-                            f" for constraint {constraint}" if constraint else "")
-        logging.info("%s: %d ads", pool, len(found))
-        ads.extend((pool, ad) for ad in found)
-        ok.add(pool)
+            logging.warning("%s: query returned no ads%s", pool.name,
+                            f" for constraint {pool.constraint}" if pool.constraint else "")
+        logging.info("%s: %d ads", pool.name, len(found))
+        ads.extend((pool.name, ad) for ad in found)
+        ok.add(pool.name)
     return ads, ok
 
 
@@ -150,27 +173,29 @@ class SnapshotCollector:
         yield slots
 
 
-def refresh(collector, pairs, constraints, interval):
+def refresh(exporter, pools, interval):
     """query, summarize, swap. runs until the process exits."""
+    ours = {pool.name: pool.ours for pool in pools}
     while True:
         start = time.time()
         try:
-            ads, ok = fetch(pairs, constraints)
-            snapshot = summarize(ads)
-            collector.replace(snapshot, ok)
+            ads, ok = fetch(pools)
+            snapshot = summarize(ads, ours)
+            exporter.replace(snapshot, ok)
         except Exception:
             logging.exception("refresh failed, keeping the previous snapshot")
         else:
             now = time.time()
-            for pool in ok:
-                LAST_SUCCESS.labels(pool=pool).set(now)
+            for name in ok:
+                LAST_SUCCESS.labels(pool=name).set(now)
             # one snapshot entry per label set, so a collision here means prometheus
-            # would reject the scrape as duplicate series. summarize keys on SlotKey,
-            # so this only fires if SlotKey stops covering something that varies.
-            if len({(k.pool, k.site, k.state, k.activity, k.type) for k in snapshot}) != len(snapshot):
+            # would reject the scrape as duplicate series. 
+            # this fires if LABELS ever stops covering everything SlotKey varies on.
+            emitted = {tuple(getattr(k, label) for label in LABELS) for k in snapshot}
+            if len(emitted) != len(snapshot):
                 logging.warning("snapshot has duplicate label sets, scrape may be rejected")
             logging.info("refreshed %d of %d pool(s), %d label set(s), %.0fs",
-                         len(ok), len(pairs), len(snapshot), now - start)
+                         len(ok), len(pools), len(snapshot), now - start)
 
         elapsed = time.time() - start
         if elapsed < interval:
@@ -207,6 +232,13 @@ def main():
         help="condor expression to narrow one pool, repeatable. pools without one are queried unfiltered"
     )
     parser.add_option(
+        "--ours",
+        action="append",
+        dest="ours",
+        metavar="NAME:VALUE",
+        help="what makes a slot ours, lowercased and matched against RemoteOwner. repeatable. defaults to '*' (the whole pool is ours)."
+    )
+    parser.add_option(
         "-v", "--verbose", default=False, action="store_true",
         help="debug logging",
     )
@@ -219,35 +251,34 @@ def main():
 
     if not options.collectors:
         parser.error("at least one --collector is required")
-    pairs = parse_collectors(options.collectors)
-    constraints = parse_constraints(options.constraints)
-
-    unknown = set(constraints) - {pool for pool, _address in pairs}
-    if unknown:
-        parser.error(f"--constraint for unknown pool(s): {', '.join(sorted(unknown))}")
+    try:
+        pools = parse_specs(options.collectors, options.constraints, options.ours)
+    except ValueError as exc:
+        parser.error(str(exc))
+    ours = {pool.name: pool.ours for pool in pools}
 
     if options.dry_run:
-        ads, ok = fetch(pairs, constraints)
+        ads, ok = fetch(pools)
         logging.info("answered: %s", ", ".join(sorted(ok)) or "none")
-        for key, values in sorted(summarize(ads).items()):
+        for key, values in sorted(summarize(ads, ours).items()):
             measures = " ".join(f"{k}={v:.0f}" for k, v in sorted(values.items()))
-            print(f"{key.pool:<6} {key.site:<16} {key.type:<12} {key.state:<10} "
-                  f"{key.activity:<12} {measures}")
+            print(f"{key.pool:<14} {key.site:<16} {key.type:<12} {key.tenant:<8} "
+                  f"{key.state:<10} {key.activity:<12} {measures}")
         return
 
     prometheus_client.REGISTRY.unregister(prometheus_client.GC_COLLECTOR)
     prometheus_client.REGISTRY.unregister(prometheus_client.PLATFORM_COLLECTOR)
     prometheus_client.REGISTRY.unregister(prometheus_client.PROCESS_COLLECTOR)
 
-    collector = SnapshotCollector()
-    prometheus_client.REGISTRY.register(collector)
+    exporter = SnapshotCollector()
+    prometheus_client.REGISTRY.register(exporter)
 
     # start_http_server runs the scrape server on its own thread, so the refresh loop
     # below is free to block on the collector query.
     prometheus_client.start_http_server(options.port)
     logging.info("serving /metrics on port %d", options.port)
 
-    refresh(collector, pairs, constraints, options.interval)
+    refresh(exporter, pools, options.interval)
 
 
 if __name__ == "__main__":

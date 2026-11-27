@@ -22,16 +22,23 @@ services:
       - glidein:glidein-cm.icecube.wisc.edu
       - --collector
       - npx:cm-el9.icecube.wisc.edu
+      # the two OSG pools partition the pool by allocation. only the dedicated half is
+      # filtered, so osg-shared can still report the shared capacity we run on.
       - --collector
       - osg-dedicated:cm-1.ospool.osg-htc.org
       - --constraint
-      - 'osg-dedicated:regexp("icecube",GLIDECLIENT_Group,"i")'
+      - 'osg-dedicated:GLIDECLIENT_Group =?= undefined ? false : regexp("icecube",GLIDECLIENT_Group,"i")'
       - --collector
       - osg-shared:cm-1.ospool.osg-htc.org
       - --constraint
-      - 'osg-shared:SlotType=="Dynamic" && regexp("icecube",RemoteOwner) && !regexp("icecube",GLIDECLIENT_Group,"i")'
+      - 'osg-shared:!(GLIDECLIENT_Group =?= undefined ? false : regexp("icecube",GLIDECLIENT_Group,"i"))'
+      - --ours
+      - 'osg-shared:icecube'
+      # chtc is shared: unfiltered so shared capacity is visible, labelled by RemoteOwner
       - --collector
       - chtc:cm.chtc.wisc.edu
+      - --ours
+      - 'chtc:icecube'
       - -i
       - "60"
       - -p
