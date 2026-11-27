@@ -43,10 +43,21 @@ class SlotKey(NamedTuple):
     tenant: str
 
 
-# every label in exposition order. `type` is part of it because partitionable and
-# static slots both report unclaimed capacity, so without it their series would
-# collide on identical label sets.
+# every label in exposition order. 
+# `type` is there to distinguis between unclaimed capacity from partitionable and static slots. 
+# `tenant` is there to separate series based on who owns the machine.
 LABELS = SlotKey._fields
+
+
+def number(ad, key):
+    """a numeric classad attribute parser, or None when it is absent or unset.
+
+    condor reports an unset attribute as either a missing key 
+    or a classad value that comes through as a string, never as a number. 
+    returning None here keeps the choice of how to handle missing values to the call site.
+    """
+    value = ad.get(key)
+    return value if isinstance(value, (int, float)) else None
 
 
 def slot_type(ad):
@@ -86,9 +97,9 @@ def label_values(pool, ad, ours):
 
 def remaining(ad):
     """a partitionable slot's unclaimed resources, plus the stranded split."""
-    cpus = ad.get("Cpus") or 0
-    mem = (ad.get("Memory") or 0) * MiB
-    gpus = ad.get("GPUs") or 0
+    cpus = number(ad, "Cpus") or 0
+    mem = (number(ad, "Memory") or 0) * MiB
+    gpus = number(ad, "GPUs") or 0
 
     pairable = min(cpus, mem // MIN_CLAIM_MEMORY)
 
@@ -110,13 +121,16 @@ def held(ad):
     two: absent means no used figure at all, so sums cover only measured slots.
     """
     values = {
-        "cores_claimed": ad.get("Cpus") or 0,
-        "memory_claimed_bytes": (ad.get("Memory") or 0) * MiB,
-        "gpus_claimed": ad.get("GPUs") or 0,
+        "cores_claimed": number(ad, "Cpus") or 0,
+        "memory_claimed_bytes": (number(ad, "Memory") or 0) * MiB,
+        "gpus_claimed": number(ad, "GPUs") or 0,
     }
-    if ad.get("MemoryUsage") is not None:
-        values["memory_used_bytes"] = ad["MemoryUsage"] * MiB
+    # optional: an unmeasured slot contributes nothing rather than a zero
+    used = number(ad, "MemoryUsage")
+    if used is not None:
+        values["memory_used_bytes"] = used * MiB
     return values
+
 
 def static(ad):
     """a static slot's resources, as claimed or unclaimed.
@@ -127,9 +141,9 @@ def static(ad):
     if state_of(ad) in ("claimed", "preempting"):
         return held(ad)
     return {
-        "cores_unclaimed": ad.get("Cpus") or 0,
-        "memory_unclaimed_bytes": (ad.get("Memory") or 0) * MiB,
-        "gpus_unclaimed": ad.get("GPUs") or 0,
+        "cores_unclaimed": number(ad, "Cpus") or 0,
+        "memory_unclaimed_bytes": (number(ad, "Memory") or 0) * MiB,
+        "gpus_unclaimed": number(ad, "GPUs") or 0,
     }
 
 
